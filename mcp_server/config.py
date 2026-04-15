@@ -13,6 +13,7 @@ import os
 import platform
 import stat
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def _config_dir() -> Path:
@@ -49,29 +50,37 @@ def load_config() -> dict:
 
 def save_config(api_key: str, base_url: str | None = None) -> str:
     """Save API key to config file with restricted permissions. Returns the path."""
+    is_unix = platform.system() != "Windows"
     dir_path = _config_dir()
     dir_path.mkdir(parents=True, exist_ok=True)
+    if is_unix:
+        dir_path.chmod(0o700)
 
     data = {"api_key": api_key}
-    if base_url:
+    if base_url is not None:
         data["base_url"] = base_url
 
     path = _config_path()
 
     # Merge with existing config
-    if path.exists():
+    try:
+        existing = json.loads(path.read_text())
+        existing.update(data)
+        data = existing
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    content = json.dumps(data, indent=2) + "\n"
+
+    # Write with restricted permissions to avoid a world-readable window
+    if is_unix:
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            existing = json.loads(path.read_text())
-            existing.update(data)
-            data = existing
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    path.write_text(json.dumps(data, indent=2) + "\n")
-
-    # Set file permissions to owner-only (Unix)
-    if platform.system() != "Windows":
-        path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # 0600
+            os.write(fd, content.encode())
+        finally:
+            os.close(fd)
+    else:
+        path.write_text(content)
 
     return str(path)
 
@@ -83,7 +92,10 @@ def get_api_key() -> str | None:
 
 def is_https_or_localhost(url: str) -> bool:
     """Return True if URL uses HTTPS or targets localhost (for local dev)."""
-    return url.startswith("https://") or url.startswith("http://localhost")
+    parsed = urlparse(url)
+    if parsed.scheme == "https":
+        return True
+    return parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1")
 
 
 def get_base_url() -> str:

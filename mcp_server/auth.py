@@ -28,18 +28,20 @@ def run_device_auth(base_url: str | None = None) -> dict:
     except Exception as e:
         return {"status": "failed", "error": f"Could not start device auth: {e}"}
 
-    device_code = start["device_code"]
-    user_code = start["user_code"]
-    verification_url = start["verification_url"]
-    expires_in = start.get("expires_in", 900)
-    poll_interval = start.get("poll_interval", 5)
+    try:
+        device_code = start["device_code"]
+        user_code = start["user_code"]
+        verification_url = start["verification_url"]
+    except KeyError as e:
+        return {"status": "failed", "error": f"Server response missing required field: {e}"}
+    expires_in = min(start.get("expires_in", 900), 1800)
+    poll_interval = min(max(start.get("poll_interval", 5), 2), 30)
 
     if not is_https_or_localhost(verification_url):
         return {"status": "failed", "error": "Refusing to open non-HTTPS verification URL."}
 
     try:
-        webbrowser.open(verification_url)
-        browser_opened = True
+        browser_opened = webbrowser.open(verification_url)
     except Exception:
         browser_opened = False
 
@@ -47,8 +49,6 @@ def run_device_auth(base_url: str | None = None) -> dict:
     deadline = time.time() + expires_in
     consecutive_failures = 0
     while time.time() < deadline:
-        time.sleep(poll_interval)
-
         try:
             result = client.device_auth_poll(device_code)
             consecutive_failures = 0
@@ -56,10 +56,10 @@ def run_device_auth(base_url: str | None = None) -> dict:
             consecutive_failures += 1
             if consecutive_failures >= 5:
                 return {"status": "failed", "error": f"Polling failed after 5 consecutive errors: {e}"}
+            time.sleep(poll_interval)
             continue
 
         if result["status"] == "authorized" and result.get("api_key"):
-            # Save the key
             config_path = save_config(
                 api_key=result["api_key"],
                 base_url=base_url,
@@ -74,5 +74,7 @@ def run_device_auth(base_url: str | None = None) -> dict:
 
         if result["status"] == "expired":
             return {"status": "failed", "error": "Authorization code expired. Please try again."}
+
+        time.sleep(poll_interval)
 
     return {"status": "failed", "error": "Authorization timed out. Please try again."}

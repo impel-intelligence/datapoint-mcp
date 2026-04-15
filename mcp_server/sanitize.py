@@ -8,7 +8,7 @@ import re
 
 MAX_RESPONSE_LENGTH = 500
 
-_TAG_RE = re.compile(r"<[^>]{0,200}>")
+_TAG_RE = re.compile(r"<[^>]*>")
 
 
 def sanitize_text(text: str) -> str:
