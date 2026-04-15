@@ -11,7 +11,6 @@ Locations:
 import json
 import os
 import platform
-import stat
 from pathlib import Path
 from urllib.parse import urlparse
 
