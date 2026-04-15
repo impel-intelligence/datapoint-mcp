@@ -4,6 +4,7 @@ Provides tools for creating human evaluation surveys, checking results,
 and managing credits — all from within Claude Code conversations.
 """
 
+import atexit
 import json
 
 from mcp.server.fastmcp import FastMCP
@@ -156,18 +157,6 @@ def create_survey(plan: dict) -> str:
 
     try:
         result = client.create_job(plan)
-
-        balance = client.get_balance()
-
-        return (
-            f"Survey created successfully!\n\n"
-            f"  Job ID: {result['job_id']}\n"
-            f"  Status: {result['status']}\n"
-            f"  Datapoints: {result['total_datapoints']}\n"
-            f"  Estimated cost: ${result.get('estimated_cost_usd', 0):.2f}\n"
-            f"  Remaining balance: ${balance['available_usd']:.2f}\n\n"
-            f"Use check_survey with job_id '{result['job_id']}' to monitor progress."
-        )
     except DatapointAPIError as e:
         if e.status_code == 402:
             return (
@@ -176,6 +165,24 @@ def create_survey(plan: dict) -> str:
                 f"Use check_balance to see your current balance."
             )
         return f"Error creating survey: {e.detail}"
+
+    lines = [
+        "Survey created successfully!",
+        "",
+        f"  Job ID: {result['job_id']}",
+        f"  Status: {result['status']}",
+        f"  Datapoints: {result['total_datapoints']}",
+        f"  Estimated cost: ${result.get('estimated_cost_usd', 0):.2f}",
+    ]
+
+    try:
+        balance = client.get_balance()
+        lines.append(f"  Remaining balance: ${balance['available_usd']:.2f}")
+    except DatapointAPIError:
+        pass
+
+    lines.append(f"\nUse check_survey with job_id '{result['job_id']}' to monitor progress.")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +264,8 @@ def check_survey(job_id: str) -> str:
                     lines.append(f"    Responses: {r.get('total_responses', 0)}")
                     lines.append("")
 
-        except DatapointAPIError:
-            lines.append("\n(Results not yet available)")
+        except DatapointAPIError as e:
+            lines.append(f"\n(Could not fetch results: {e.detail})")
 
     return "\n".join(lines)
 
@@ -320,3 +327,9 @@ def check_balance() -> str:
         f"  Reserved (in-flight surveys): ${balance['reserved_usd']:.2f}\n"
         f"  Total purchased: ${balance['total_purchased_usd']:.2f}"
     )
+
+
+def main():
+    """Entry point for the console script."""
+    atexit.register(_invalidate_client)
+    mcp.run(transport="stdio")

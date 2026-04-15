@@ -13,4 +13,4 @@ dependencies = [
 ]
 
 [project.scripts]
-datapoint-mcp = "mcp_server.server:mcp.run"
+datapoint-mcp = "mcp_server.server:main"
