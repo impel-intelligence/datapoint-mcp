@@ -135,6 +135,14 @@ def plan_survey(description: str, max_responses: int = 10) -> str:
         return "\n".join(lines)
 
     except DatapointAPIError as e:
+        # 422 carries a structured {"message", "warnings"} body from _validate_plan —
+        # surface the warnings so the user sees what the LLM got wrong.
+        if e.status_code == 422 and isinstance(e.detail, dict):
+            message = e.detail.get("message", "Plan failed validation")
+            warnings = e.detail.get("warnings") or []
+            lines = [f"Could not generate a valid plan: {message}"]
+            lines.extend(f"  - {w}" for w in warnings)
+            return "\n".join(lines)
         return f"Error planning survey: {e.detail}"
 
 
@@ -159,9 +167,15 @@ def create_survey(plan: dict) -> str:
         result = client.create_job(plan)
     except DatapointAPIError as e:
         if e.status_code == 402:
+            if isinstance(e.detail, dict):
+                needed = e.detail.get("needed_usd", 0)
+                available = e.detail.get("available_usd", 0)
+                details = f"Need ${needed:.2f}, have ${available:.2f}"
+            else:
+                details = str(e.detail)
             return (
                 f"Insufficient balance to create this survey.\n\n"
-                f"Details: {e.detail}\n\n"
+                f"{details}\n\n"
                 f"Use check_balance to see your current balance."
             )
         return f"Error creating survey: {e.detail}"

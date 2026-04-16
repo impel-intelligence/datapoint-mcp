@@ -14,9 +14,15 @@ PLAN_TIMEOUT = 60.0
 
 
 class DatapointAPIError(Exception):
-    """Raised when the Datapoint API returns an error."""
+    """Raised when the Datapoint API returns an error.
 
-    def __init__(self, status_code: int, detail: str):
+    ``detail`` is whatever the server put in its error body — a string for simple
+    cases, a dict for structured errors like the survey planner's 422 response
+    (``{"message": ..., "warnings": [...]}``). Callers that want to render
+    structured errors nicely should check ``isinstance(e.detail, dict)``.
+    """
+
+    def __init__(self, status_code: int, detail):
         self.status_code = status_code
         self.detail = detail
         super().__init__(f"API error {status_code}: {detail}")
@@ -54,7 +60,7 @@ class DatapointClient:
                 detail = body.get("detail", body.get("message", resp.text))
             except Exception:
                 detail = resp.text
-            raise DatapointAPIError(resp.status_code, str(detail))
+            raise DatapointAPIError(resp.status_code, detail)
 
         return resp.json()
 
