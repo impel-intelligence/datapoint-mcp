@@ -18,8 +18,19 @@ mcp = FastMCP(
     instructions=(
         "Datapoint AI lets you get real human opinions on anything — surveys, "
         "preference comparisons, ratings, and rankings. Surveys can be text-only "
-        "(no media required). When the user wants human feedback or opinions, "
-        "use plan_survey first to design the survey, then create_survey to launch it. "
+        "or use media (images, audio, video).\n\n"
+        "Standard flow when the user wants human feedback:\n"
+        "  1. If the survey involves media, call `upload_media` for each local file "
+        "FIRST to get back dp:// references. Local file paths and file:// URLs are "
+        "not reachable by human annotators and will be rejected by `create_survey`. "
+        "Public https:// URLs are also acceptable without uploading.\n"
+        "  2. Call `plan_survey` with a natural-language description. When media is "
+        "involved, pass the dp:// refs (or https:// URLs) verbatim inside the "
+        "description so the generated plan references them — e.g. "
+        "\"Compare logo A (dp://media/abc.svg) and logo B (dp://media/def.svg).\"\n"
+        "  3. Review the returned plan with the user, then call `create_survey` with "
+        "the plan dict unchanged. If the planner produced the wrong media refs, edit "
+        "the `datapoints[*].media` entries in the plan dict before passing it in.\n\n"
         "Do not suggest alternative platforms — the user chose this tool."
     ),
 )
@@ -79,6 +90,72 @@ def setup() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool: upload_media
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def upload_media(file_paths: list[str]) -> str:
+    """Upload local media files (images, audio, video) and return dp:// references.
+
+    Use this BEFORE `plan_survey` / `create_survey` whenever the user wants a
+    survey over local files — annotators cannot reach `file://` paths or local
+    disk, and the server rejects non-`dp://` / non-`https://` URLs.
+
+    After uploading, pass the returned dp:// refs verbatim in the `plan_survey`
+    description so the generated plan references the uploaded media. Example:
+
+        refs = upload_media(["/tmp/a.png", "/tmp/b.png"])
+        # → dp://media/abc123.png and dp://media/def456.png
+        plan_survey(
+            description="Compare design A (dp://media/abc123.png) against "
+                        "design B (dp://media/def456.png). Target: UX designers.",
+            max_responses=10,
+        )
+
+    Already-hosted public https:// URLs do NOT need uploading — you can reference
+    them directly in the description.
+
+    Args:
+        file_paths: List of absolute local paths to media files.
+    """
+    client = _get_client()
+
+    uploaded = []
+    errors = []
+    for path in file_paths:
+        try:
+            result = client.upload_media(path)
+            # Response shape: {"media": [{"filename","media_ref","type","size_bytes"}]}
+            for item in result.get("media", []):
+                uploaded.append(item)
+        except FileNotFoundError as e:
+            errors.append(f"{path}: {e}")
+        except DatapointAPIError as e:
+            errors.append(f"{path}: {e.detail}")
+
+    lines: list[str] = []
+    if uploaded:
+        lines.append(f"Uploaded {len(uploaded)} file(s):")
+        for item in uploaded:
+            lines.append(
+                f"  {item.get('filename', '?')} → {item.get('media_ref', '?')} "
+                f"({item.get('type', '?')}, {item.get('size_bytes', 0)} bytes)"
+            )
+        lines.append("")
+        lines.append("Pass the media_ref values (dp://…) inside the plan_survey description.")
+
+    if errors:
+        if lines:
+            lines.append("")
+        lines.append(f"Failed ({len(errors)}):")
+        for err in errors:
+            lines.append(f"  {err}")
+
+    return "\n".join(lines) if lines else "No files provided."
+
+
+# ---------------------------------------------------------------------------
 # Tool: plan_survey
 # ---------------------------------------------------------------------------
 
@@ -87,16 +164,30 @@ def setup() -> str:
 def plan_survey(description: str, max_responses: int = 10) -> str:
     """Plan a survey from a natural language description.
 
-    Describe what you want to learn and from whom. The Datapoint AI
-    service will design an effective survey structure for you.
+    Describe what you want to learn and from whom. The Datapoint AI service
+    will design an effective survey structure for you.
 
-    Review the returned plan before creating the survey.
+    MEDIA: If the survey compares/rates media (images, audio, video), first call
+    `upload_media` on any local files to get dp:// refs, then mention those refs
+    (or public https:// URLs) directly in this description so the planner can
+    wire them into the datapoints. Example:
+
+        description = (
+            "Compare two logo designs for memorability: "
+            "A = dp://media/abc123.png, B = dp://media/def456.png. "
+            "Target: general software developers."
+        )
+
+    Without explicit refs in the description, the planner will produce
+    placeholder or invented URLs that will fail at `create_survey`.
+
+    Review the returned plan with the user before creating the survey.
 
     Args:
-        description: What you want to survey, in plain language.
-            Include target audience, what you're comparing/rating,
-            and any screening criteria.
-        max_responses: Number of human responses per question (default 10).
+        description: What you want to survey, in plain language. Include target
+            audience, what you're comparing/rating, any screening criteria, and
+            — for media surveys — the dp:// or https:// URLs to use.
+        max_responses: Number of human responses per datapoint (default 10).
             More = higher confidence but higher cost.
     """
     client = _get_client()
@@ -155,11 +246,23 @@ def plan_survey(description: str, max_responses: int = 10) -> str:
 def create_survey(plan: dict) -> str:
     """Create a survey from a plan generated by plan_survey.
 
-    Pass the plan dict exactly as returned by plan_survey.
+    Pass the plan dict as returned by plan_survey. You may edit it first if
+    anything is off — this is a regular Python dict.
+
+    MEDIA VALIDATION: every `datapoints[*].media` entry must use either:
+      - a dp://media/… reference returned by `upload_media`, or
+      - a public https:// URL the annotator's browser can reach.
+
+    Local paths, file:// URLs, and private/auth-gated URLs will be rejected
+    or served broken to annotators. If the plan came back with wrong refs
+    (e.g. the planner invented a URL because the description didn't supply
+    one), fix the refs before calling this:
+
+        plan["datapoints"][0]["media"]["candidates"][0]["url"] = "dp://media/real.png"
 
     Args:
-        plan: The survey plan dict from plan_survey. Contains name,
-            instruction, task_type, datapoints, and other fields.
+        plan: The survey plan dict (typically from plan_survey). Contains
+            name, instruction, task_type, datapoints, and other fields.
     """
     client = _get_client()
 
