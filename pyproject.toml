@@ -14,3 +14,8 @@ dependencies = [
 
 [project.scripts]
 datapoint-mcp = "mcp_server.server:main"
+
+# Hatchling can't auto-detect the package because the project name
+# (datapoint-mcp → datapoint_mcp) doesn't match the source dir (mcp_server).
+[tool.hatch.build.targets.wheel]
+packages = ["mcp_server"]
