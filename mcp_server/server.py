@@ -279,7 +279,8 @@ def create_survey(plan: dict) -> str:
             return (
                 f"Insufficient balance to create this survey.\n\n"
                 f"{details}\n\n"
-                f"Use check_balance to see your current balance."
+                f"Use add_credits to open a checkout link and top up, "
+                f"or check_balance to see your current balance."
             )
         return f"Error creating survey: {e.detail}"
 
@@ -443,6 +444,37 @@ def check_balance() -> str:
         f"  Available: ${balance['available_usd']:.2f}\n"
         f"  Reserved (in-flight surveys): ${balance['reserved_usd']:.2f}\n"
         f"  Total purchased: ${balance['total_purchased_usd']:.2f}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool: add_credits
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def add_credits(product_id: str | None = None) -> str:
+    """Open a checkout link to purchase Datapoint AI credits.
+
+    Returns a Polar.sh checkout URL. The user completes payment in their
+    browser; the credits land on their account once Polar's webhook fires.
+
+    Args:
+        product_id: Optional Polar product ID. Omit to use the default credit
+            bundle configured on the server.
+    """
+    client = _get_client()
+
+    try:
+        result = client.create_checkout(product_id=product_id)
+    except DatapointAPIError as e:
+        return f"Error creating checkout: {e.detail}"
+
+    return (
+        "To add credits, open this checkout URL in your browser:\n\n"
+        f"  {result['checkout_url']}\n\n"
+        "Credits will appear on your account once payment completes. "
+        "Use check_balance to confirm."
     )
 
 
