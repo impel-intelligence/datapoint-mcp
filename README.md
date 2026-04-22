@@ -24,7 +24,7 @@ Add to your Claude Code settings (`~/.claude/settings.json`):
   "mcpServers": {
     "datapoint": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/impel-intelligence/datapoint-mcp.git", "datapoint-mcp"]
+      "args": ["--refresh", "--from", "git+https://github.com/impel-intelligence/datapoint-mcp.git", "datapoint-mcp"]
     }
   }
 }
