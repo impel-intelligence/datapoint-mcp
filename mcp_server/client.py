@@ -86,6 +86,9 @@ class DatapointClient:
     def get_job_results(self, job_id: str, page: int = 1, per_page: int = 100) -> dict:
         return self._request("GET", f"/jobs/{job_id}/results", params={"page": page, "per_page": per_page})
 
+    def get_job_responses(self, job_id: str, page: int = 1, per_page: int = 100) -> dict:
+        return self._request("GET", f"/jobs/{job_id}/responses", params={"page": page, "per_page": per_page})
+
     def list_jobs(self) -> dict:
         return self._request("GET", "/jobs")
 

@@ -11,7 +11,7 @@ from mcp.server.fastmcp import FastMCP
 
 from mcp_server.client import DatapointAPIError, DatapointClient
 from mcp_server.config import get_api_key, get_base_url
-from mcp_server.sanitize import sanitize_results
+from mcp_server.sanitize import sanitize_responses, sanitize_results
 
 mcp = FastMCP(
     "datapoint",
@@ -436,6 +436,67 @@ def list_surveys() -> str:
             f"  {status_icon} {job.get('name', 'Unnamed')} "
             f"(id: {job.get('job_id', '?')}, type: {job.get('task_type', '?')})"
         )
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Tool: get_survey_responses
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_survey_responses(job_id: str, page: int = 1, per_page: int = 100) -> str:
+    """Get the raw per-annotator responses for a survey.
+
+    `check_survey` returns aggregated results (consensus, votes, mean/median,
+    ranks). Use this tool when you want to see individual responses from each
+    annotator — useful for spotting outliers, seeing the spread of opinion, or
+    understanding disagreement.
+
+    Args:
+        job_id: The job ID returned by create_survey.
+        page: Page number (default 1).
+        per_page: Responses per page (default 100, max 200).
+    """
+    client = _get_client()
+
+    try:
+        data = client.get_job_responses(job_id, page=page, per_page=per_page)
+    except DatapointAPIError as e:
+        return f"Error: {e.detail}"
+
+    responses = sanitize_responses(data.get("responses", []))
+    total = data.get("total_responses", 0)
+
+    if not responses:
+        return f"No responses yet for job {job_id}."
+
+    by_datapoint: dict[int, list[dict]] = {}
+    for r in responses:
+        by_datapoint.setdefault(r.get("datapoint_index", -1), []).append(r)
+
+    lines = [
+        f"Raw responses — job {job_id}",
+        f"Showing {len(responses)} of {total} total (page {page}, {per_page} per page)",
+        "",
+    ]
+    for idx in sorted(by_datapoint):
+        items = by_datapoint[idx]
+        plural = "s" if len(items) != 1 else ""
+        lines.append(f"Datapoint {idx} ({len(items)} response{plural}):")
+        for r in items:
+            annotator = (r.get("annotator_id") or "?")[:8]
+            timestamp = r.get("timestamp") or "?"
+            response_text = r.get("response")
+            rt_ms = r.get("response_time_ms")
+            rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
+            lines.append(f"  - {annotator} @ {timestamp}: {response_text!r}{rt_str}")
+        lines.append("")
+
+    total_pages = -(-total // per_page) if per_page > 0 else 1
+    if page < total_pages:
+        lines.append(f"More responses available — call again with page={page + 1}.")
 
     return "\n".join(lines)
 

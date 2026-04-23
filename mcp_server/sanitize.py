@@ -40,3 +40,8 @@ def _sanitize_value(value, _depth=0):
 def sanitize_results(results: list[dict]) -> list[dict]:
     """Sanitize a list of result dicts from the job results endpoint."""
     return [_sanitize_value(result) for result in results]
+
+
+def sanitize_responses(responses: list[dict]) -> list[dict]:
+    """Sanitize a list of raw response dicts from the job responses endpoint."""
+    return [_sanitize_value(response) for response in responses]

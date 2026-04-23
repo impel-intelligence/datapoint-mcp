@@ -1,6 +1,6 @@
 {
   "name": "datapoint",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Get real human opinions — surveys, preference comparisons, ratings, and rankings — from inside Claude Code, powered by Datapoint AI.",
   "author": {
     "name": "Impel Intelligence",

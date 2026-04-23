@@ -10,7 +10,8 @@ An MCP server that gives Claude Code tools for creating and managing human evalu
 | `upload_media` | Upload local images, audio, or video so they can be used in a survey |
 | `plan_survey` | Design a survey from a natural language description |
 | `create_survey` | Launch a survey from a plan |
-| `check_survey` | Check status, progress, and results |
+| `check_survey` | Check status, progress, and aggregated results |
+| `get_survey_responses` | Get the raw per-annotator responses (paginated) |
 | `list_surveys` | List all your surveys |
 | `check_balance` | Check your account balance |
 | `add_credits` | Open a checkout link to top up your account |
