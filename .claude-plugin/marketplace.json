@@ -1,0 +1,19 @@
+{
+  "name": "datapoint-mcp",
+  "owner": {
+    "name": "Impel Intelligence",
+    "email": "support@trydatapoint.com"
+  },
+  "metadata": {
+    "description": "Datapoint AI plugin for Claude Code — get real human opinions via surveys."
+  },
+  "plugins": [
+    {
+      "name": "datapoint",
+      "source": "./",
+      "description": "Get real human opinions — surveys, preference comparisons, ratings, and rankings — from inside Claude Code, powered by Datapoint AI.",
+      "category": "data",
+      "tags": ["survey", "human-evaluation", "data-labeling", "annotation", "feedback"]
+    }
+  ]
+}
