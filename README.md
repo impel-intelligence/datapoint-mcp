@@ -17,7 +17,17 @@ An MCP server that gives Claude Code tools for creating and managing human evalu
 
 ## Install in Claude Code
 
-Add to your Claude Code settings (`~/.claude/settings.json`):
+### As a plugin (recommended)
+
+```
+/plugin install impel-intelligence/datapoint-mcp
+```
+
+You'll receive plugin updates automatically. Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+### As a raw MCP server
+
+If you'd rather wire it in directly, add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -29,8 +39,6 @@ Add to your Claude Code settings (`~/.claude/settings.json`):
   }
 }
 ```
-
-Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ## Usage
 

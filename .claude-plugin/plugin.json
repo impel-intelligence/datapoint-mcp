@@ -1,0 +1,21 @@
+{
+  "name": "datapoint",
+  "version": "0.1.1",
+  "description": "Get real human opinions — surveys, preference comparisons, ratings, and rankings — from inside Claude Code, powered by Datapoint AI.",
+  "author": {
+    "name": "Impel Intelligence",
+    "url": "https://trydatapoint.com"
+  },
+  "homepage": "https://trydatapoint.com",
+  "repository": "https://github.com/impel-intelligence/datapoint-mcp",
+  "license": "MIT",
+  "keywords": [
+    "survey",
+    "human-evaluation",
+    "data-labeling",
+    "annotation",
+    "feedback",
+    "preference",
+    "rating"
+  ]
+}

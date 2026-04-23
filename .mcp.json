@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "datapoint": {
+      "command": "uvx",
+      "args": ["--refresh", "--from", "${CLAUDE_PLUGIN_ROOT}", "datapoint-mcp"]
+    }
+  }
+}
