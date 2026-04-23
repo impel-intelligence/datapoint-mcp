@@ -22,10 +22,10 @@ An MCP server that gives Claude Code tools for creating and managing human evalu
 
 ```
 /plugin marketplace add impel-intelligence/datapoint-mcp
-/plugin install datapoint@datapoint-mcp
+/plugin install datapoint@datapoint
 ```
 
-To pick up new versions, run `/plugin marketplace update datapoint-mcp` then `/plugin update datapoint@datapoint-mcp`. Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
+To pick up new versions, run `/plugin marketplace update datapoint` then `/plugin update datapoint@datapoint`. Requires [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ### As a raw MCP server
 
