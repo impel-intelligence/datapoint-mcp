@@ -52,6 +52,16 @@ Claude will use `plan_survey` to design it, show you the plan and cost, then `cr
 
 Run `setup` first to authenticate if you haven't already.
 
+### Chain surveys (multi-step flow)
+
+Some surveys have dependent questions — the second only makes sense given a specific answer to the first. Describe it that way and Claude will plan a **chain**:
+
+> "Ask 20 listeners if they could understand the speaker in this clip. If yes, rate the audio quality 1–5. If not, skip the rating."
+
+A chain ties 2–5 steps together into a single unit of annotator work: every step is served to the same annotator, in order, and a per-step `skip_if` rule can terminate the walk early. Claude will show you the full chain structure (steps, any skip conditions, cost) and wait for your confirmation before calling `create_survey`.
+
+The cost shown in `plan_survey` is the upper bound (every walk completes every step); when `skip_if` rules fire, walks cost proportionally less.
+
 ## Configuration
 
 | Environment variable | Description |

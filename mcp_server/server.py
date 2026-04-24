@@ -18,7 +18,9 @@ mcp = FastMCP(
     instructions=(
         "Datapoint AI lets you get real human opinions on anything — surveys, "
         "preference comparisons, ratings, and rankings. Surveys can be text-only "
-        "or use media (images, audio, video).\n\n"
+        "or use media (images, audio, video), and can also be configured as chains "
+        "(ordered sequences of 2-5 questions, with optional skip rules for "
+        "conditional flow).\n\n"
         "Standard flow when the user wants human feedback:\n"
         "  1. If the survey involves media, call `upload_media` for each local file "
         "FIRST to get back dp:// references. Local file paths and file:// URLs are "
@@ -35,6 +37,14 @@ mcp = FastMCP(
         "Only after the user confirms (or edits the plan) call `create_survey` with "
         "the plan dict. If the planner produced the wrong media refs, edit the "
         "`datapoints[*].media` entries before passing it in.\n\n"
+        "Chain surveys (multi-step flow):\n"
+        "  If the user describes dependent questions — \"if X, then ask Y\", "
+        "\"stop if Z\", gated follow-ups, or a fixed ordered sequence — the planner "
+        "may return a chain plan (with a top-level `steps` array alongside "
+        "`datapoints`, instead of `task_type` + `instruction`). When you see one, "
+        "surface the full chain structure to the user: each step in order and any "
+        "`skip_if` conditions. The `plan_survey` tool output already formats this "
+        "for you — show it to the user verbatim before confirming.\n\n"
         "Do not suggest alternative platforms — the user chose this tool."
     ),
 )
@@ -164,6 +174,96 @@ def upload_media(file_paths: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
+    """Render a standalone (non-chain) plan for user confirmation."""
+    lines = [
+        "Survey Plan Ready",
+        "",
+        f"Summary: {summary}",
+        f"Task type: {plan.get('task_type', '?')}",
+        f"Datapoints: {len(plan.get('datapoints', []))}",
+        f"Responses per datapoint: {plan.get('max_responses_per_datapoint', '?')}",
+        f"Estimated cost: ${cost:.2f}",
+    ]
+    if warnings:
+        lines.append("")
+        lines.append("Warnings:")
+        for w in warnings:
+            lines.append(f"  - {w}")
+    lines.append("")
+    lines.append(
+        f"⚠ Creating this survey will spend ${cost:.2f} and kick off real paid "
+        "human work within seconds. Show the summary and cost above to the user "
+        "and WAIT for explicit confirmation before calling `create_survey`."
+    )
+    return lines
+
+
+def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
+    """Render a chain plan so the user sees the full flow + skip conditions
+    before confirming. Claude should show this to the user verbatim.
+
+    Chain plans are served atomically: an annotator who picks up the chain
+    walks through every step in order, possibly terminated early by a step's
+    ``skip_if`` predicate. Billing counts every submission-bearing answer, so
+    partial walks still cost money even though they don't count toward
+    consensus.
+    """
+    steps = plan.get("steps", [])
+    datapoints = plan.get("datapoints", [])
+    max_resp = plan.get("max_responses_per_datapoint", 0)
+
+    lines = [
+        "Chain Survey Plan Ready",
+        "",
+        f"Summary: {summary}",
+        f"Chain length: {len(steps)} step(s) in order",
+        f"Datapoints: {len(datapoints)} (each walked by up to {max_resp} annotators)",
+        f"Estimated cost: ${cost:.2f} (upper bound — partial walks cost less)",
+        "",
+        "Chain structure:",
+    ]
+    for idx, step in enumerate(steps):
+        task_type = step.get("task_type", "?")
+        instruction = step.get("instruction", "(no instruction)")
+        line = f"  {idx + 1}. [{task_type}] {instruction}"
+        opts = step.get("response_options")
+        if opts:
+            line += f"  — options: {opts}"
+        lines.append(line)
+        skip_if = step.get("skip_if")
+        if skip_if:
+            lines.append(f"     ↳ skip_if: {_format_skip_if(skip_if)}")
+
+    if warnings:
+        lines.append("")
+        lines.append("Warnings:")
+        for w in warnings:
+            lines.append(f"  - {w}")
+
+    lines.append("")
+    lines.append(
+        f"⚠ Creating this chain survey will reserve up to ${cost:.2f} (the upper bound — "
+        "walks ended early by a step's `skip_if` rule cost proportionally less)."
+    )
+    lines.append(
+        "Show the chain structure and any `skip_if` conditions above to the user and WAIT "
+        "for explicit confirmation before calling `create_survey`."
+    )
+    return lines
+
+
+def _format_skip_if(skip_if: dict) -> str:
+    """Render a canonical or shorthand ``skip_if`` dict as a short human string."""
+    if "when_answer_in" in skip_if:
+        return f"answer in {skip_if['when_answer_in']}"
+    if "when_answer_equals" in skip_if:
+        return f"answer == {skip_if['when_answer_equals']!r}"
+    if "predicate" in skip_if:
+        return f"predicate {json.dumps(skip_if['predicate'])}"
+    return json.dumps(skip_if)
+
+
 @mcp.tool()
 def plan_survey(description: str, max_responses: int = 10) -> str:
     """Plan a survey from a natural language description.
@@ -208,28 +308,11 @@ def plan_survey(description: str, max_responses: int = 10) -> str:
         cost = result.get("estimated_cost_usd", 0)
         warnings = result.get("warnings", [])
 
-        lines = [
-            "Survey Plan Ready",
-            "",
-            f"Summary: {summary}",
-            f"Task type: {plan.get('task_type', '?')}",
-            f"Datapoints: {len(plan.get('datapoints', []))}",
-            f"Responses per datapoint: {plan.get('max_responses_per_datapoint', '?')}",
-            f"Estimated cost: ${cost:.2f}",
-        ]
+        if plan.get("steps"):
+            lines = _format_chain_plan_output(plan, summary, cost, warnings)
+        else:
+            lines = _format_standalone_plan_output(plan, summary, cost, warnings)
 
-        if warnings:
-            lines.append("")
-            lines.append("Warnings:")
-            for w in warnings:
-                lines.append(f"  - {w}")
-
-        lines.append("")
-        lines.append(
-            f"⚠ Creating this survey will spend ${cost:.2f} and kick off real paid "
-            "human work within seconds. Show the summary and cost above to the user "
-            "and WAIT for explicit confirmation before calling `create_survey`."
-        )
         lines.append("")
         lines.append("Once the user confirms, call `create_survey` with this plan:")
         lines.append(json.dumps(plan, indent=2))
@@ -265,20 +348,34 @@ def create_survey(plan: dict) -> str:
     Pass the plan dict as returned by plan_survey. You may edit it first if
     anything is off — this is a regular Python dict.
 
-    MEDIA VALIDATION: every `datapoints[*].media` entry must use either:
+    Supports both standalone plans and chain plans (with a top-level `steps`
+    array alongside `datapoints`). For chain plans, the backend dispatches
+    each step of each datapoint as a linked task; the full sequence is
+    served together, in order, to one annotator per walk.
+
+    MEDIA VALIDATION: every media entry must use either:
       - a dp://media/… reference returned by `upload_media`, or
       - a public https:// URL the annotator's browser can reach.
+
+    Media lives at `datapoints[*].media` (shared across steps) OR
+    `datapoints[*].media_per_step["0"]`, `["1"]`, ... (one entry per step
+    when steps need different media shapes). The two are mutually exclusive
+    per datapoint.
 
     Local paths, file:// URLs, and private/auth-gated URLs will be rejected
     or served broken to annotators. If the plan came back with wrong refs
     (e.g. the planner invented a URL because the description didn't supply
     one), fix the refs before calling this:
 
+        # shared media
         plan["datapoints"][0]["media"]["candidates"][0]["url"] = "dp://media/real.png"
+        # per-step media (chain)
+        plan["datapoints"][0]["media_per_step"]["1"]["subject"][0]["url"] = "dp://media/real.mp3"
 
     Args:
         plan: The survey plan dict (typically from plan_survey). Contains
-            name, instruction, task_type, datapoints, and other fields.
+            name, summary, `datapoints`, and either `task_type` + `instruction`
+            (standalone) or a `steps` array (chain).
     """
     client = _get_client()
 
