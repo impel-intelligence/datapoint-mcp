@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.impel-intelligence/datapoint-mcp",
+  "title": "Datapoint",
+  "description": "MCP server for human-in-the-loop surveys, A/B preference tests, ratings, and rankings. Get real human opinions on text, images, audio, and video — directly from any MCP client.",
+  "version": "0.1.2",
+  "repository": {
+    "url": "https://github.com/impel-intelligence/datapoint-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://trydatapoint.com",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "datapoint-mcp",
+      "version": "0.1.2",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "DATAPOINT_API_KEY",
+          "description": "Datapoint AI API key. If unset, run the `setup` tool to authenticate via browser.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "DATAPOINT_BASE_URL",
+          "description": "Override the API base URL. Defaults to https://api.trydatapoint.com/data-labelling/v1.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
