@@ -505,8 +505,18 @@ def _format_check_survey(status: dict, results_data: dict | None) -> str:
             if r.get("context"):
                 dp_line += f" ({r['context'][:60]})"
             lines.append(dp_line)
-            lines.extend(_render_aggregation(r, top_task_type, indent="    "))
-            lines.append("")
+
+            steps = r.get("steps")
+            if steps:
+                for step in steps:
+                    step_idx = step.get("step_index", "?")
+                    step_tt = step.get("task_type", "?")
+                    lines.append(f"    Step {step_idx} [{step_tt}]")
+                    lines.extend(_render_aggregation(step, step_tt, indent="      "))
+                lines.append("")
+            else:
+                lines.extend(_render_aggregation(r, top_task_type, indent="    "))
+                lines.append("")
 
     return "\n".join(lines)
 

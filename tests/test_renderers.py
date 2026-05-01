@@ -133,5 +133,65 @@ class RenderAggregationTests(unittest.TestCase):
             self.assertTrue(line.startswith("    "), f"line missing indent: {line!r}")
 
 
+class FormatCheckSurveyChainTests(unittest.TestCase):
+    def _status(self) -> dict:
+        return {
+            "job_id": "job_chain",
+            "name": "vid-quality-chain",
+            "status": "active",
+            "task_type": "chain",
+            "total_datapoints": 1,
+            "processing_datapoints": 0,
+            "ready_datapoints": 1,
+            "completed_datapoints": 1,
+            "failed_datapoints": 0,
+            "total_responses": 18,
+            "max_responses_per_datapoint": 10,
+            "cost_usd": 0.36,
+            "errors": [],
+        }
+
+    def _chain_results(self) -> dict:
+        return {
+            "task_type": "chain",
+            "results": [
+                {
+                    "datapoint_index": 0,
+                    "context": None,
+                    "steps": [
+                        {
+                            "step_index": 0,
+                            "task_type": "multiple_choice",
+                            "votes": {"yes": 8, "no": 2},
+                            "total_responses": 10,
+                            "consensus": "yes",
+                            "confidence": 0.8,
+                        },
+                        {
+                            "step_index": 1,
+                            "task_type": "rating",
+                            "mean": 3.7,
+                            "median": 4,
+                            "distribution": {"3": 4, "4": 3, "5": 1},
+                            "total_responses": 8,
+                        },
+                    ],
+                }
+            ],
+        }
+
+    def test_chain_results_render_per_step_with_indent(self):
+        out = _format_check_survey(self._status(), self._chain_results())
+        self.assertIn("Datapoint 0", out)
+        self.assertIn("Step 0 [multiple_choice]", out)
+        self.assertIn("Step 1 [rating]", out)
+        # Per-step aggregation deeper indent (six spaces)
+        self.assertIn("      Consensus: yes", out)
+        self.assertIn("      Mean: 3.70", out)
+        # Drop-off across steps is visible (10 -> 8)
+        self.assertIn("      Responses: 10", out)
+        self.assertIn("      Responses: 8", out)
+
+
 if __name__ == "__main__":
     unittest.main()
