@@ -421,6 +421,48 @@ def create_survey(plan: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _render_aggregation(agg: dict, task_type: str | None = None, indent: str = "    ") -> list[str]:
+    """Render the per-task-type aggregation lines for one result block.
+
+    Used by `_format_check_survey` for both standalone results (one call per
+    datapoint) and chain step results (one call per step). Per the API's
+    documented result contract, a chain step's aggregation uses the same
+    fields as a standalone job of that step's task_type.
+
+    `task_type` is used when present; otherwise field-based detection picks
+    the right branch.
+    """
+    lines: list[str] = []
+    tt = task_type or ""
+
+    is_voted = tt in ("comparison", "multiple_choice") or agg.get("consensus") is not None
+    is_rated = tt == "rating" or agg.get("mean") is not None
+    is_ranked = tt == "ranking" or agg.get("ranking_order") is not None
+
+    if is_voted:
+        votes = agg.get("votes", {})
+        confidence = agg.get("confidence", 0) or 0
+        if agg.get("consensus") is not None:
+            lines.append(f"{indent}Consensus: {agg['consensus']} (confidence: {confidence:.0%})")
+        if votes:
+            lines.append(f"{indent}Votes: {votes}")
+
+    if is_rated:
+        if agg.get("mean") is not None:
+            lines.append(f"{indent}Mean: {agg['mean']:.2f}, Median: {agg.get('median', 'N/A')}")
+        if agg.get("distribution"):
+            lines.append(f"{indent}Distribution: {agg['distribution']}")
+
+    if is_ranked:
+        if agg.get("ranking_order"):
+            lines.append(f"{indent}Ranking: {agg['ranking_order']}")
+        if agg.get("average_ranks"):
+            lines.append(f"{indent}Average ranks: {agg['average_ranks']}")
+
+    lines.append(f"{indent}Responses: {agg.get('total_responses', 0)}")
+    return lines
+
+
 def _format_check_survey(status: dict, results_data: dict | None) -> str:
     """Format a job-status response (and optional results page) for chat."""
     total_needed = status.get("total_datapoints", 0) * status.get("max_responses_per_datapoint", 0)
@@ -453,8 +495,9 @@ def _format_check_survey(status: dict, results_data: dict | None) -> str:
 
     results = results_data.get("results", [])
     if results:
+        top_task_type = results_data.get("task_type", "")
         lines.append(f"\nResults ({len(results)} datapoints):")
-        lines.append(f"Task type: {results_data.get('task_type', 'unknown')}")
+        lines.append(f"Task type: {top_task_type or 'unknown'}")
         lines.append("")
 
         for r in results:
@@ -462,24 +505,7 @@ def _format_check_survey(status: dict, results_data: dict | None) -> str:
             if r.get("context"):
                 dp_line += f" ({r['context'][:60]})"
             lines.append(dp_line)
-
-            if r.get("consensus"):
-                votes = r.get("votes", {})
-                confidence = r.get("confidence", 0)
-                lines.append(f"    Consensus: {r['consensus']} (confidence: {confidence:.0%})")
-                lines.append(f"    Votes: {votes}")
-
-            if r.get("mean") is not None:
-                lines.append(f"    Mean: {r['mean']:.2f}, Median: {r.get('median', 'N/A')}")
-                if r.get("distribution"):
-                    lines.append(f"    Distribution: {r['distribution']}")
-
-            if r.get("ranking_order"):
-                lines.append(f"    Ranking: {r['ranking_order']}")
-                if r.get("average_ranks"):
-                    lines.append(f"    Average ranks: {r['average_ranks']}")
-
-            lines.append(f"    Responses: {r.get('total_responses', 0)}")
+            lines.extend(_render_aggregation(r, top_task_type, indent="    "))
             lines.append("")
 
     return "\n".join(lines)
