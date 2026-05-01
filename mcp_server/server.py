@@ -469,12 +469,20 @@ def _format_check_survey(status: dict, results_data: dict | None) -> str:
     total_got = status.get("total_responses", 0)
     progress_pct = (total_got / total_needed * 100) if total_needed > 0 else 0
 
+    status_line = f"Status: {status['status']}"
+    if status.get("is_paused"):
+        status_line += " (paused)"
+
+    ready = status.get("ready_datapoints", 0)
+    completed = status.get("completed_datapoints", 0)
+
     lines = [
         f"Survey: {status.get('name', status.get('job_id', '?'))}",
-        f"Status: {status['status']}",
+        status_line,
         f"Progress: {total_got}/{total_needed} responses ({progress_pct:.0f}%)",
-        f"  Datapoints — completed: {status.get('completed_datapoints', 0)}, "
-        f"active: {status.get('ready_datapoints', 0)}, "
+        f"  Datapoints — queued: {status.get('processing_datapoints', 0)}, "
+        f"active: {ready - completed}, "
+        f"completed: {completed}, "
         f"failed: {status.get('failed_datapoints', 0)}",
         f"Cost so far: ${status.get('cost_usd', 0):.2f}",
     ]

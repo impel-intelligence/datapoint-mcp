@@ -193,5 +193,45 @@ class FormatCheckSurveyChainTests(unittest.TestCase):
         self.assertIn("      Responses: 8", out)
 
 
+class FormatCheckSurveyStatusBlockTests(unittest.TestCase):
+    def _status(self, **overrides) -> dict:
+        base = {
+            "job_id": "job_x",
+            "name": "n",
+            "status": "active",
+            "task_type": "comparison",
+            "total_datapoints": 12,
+            "processing_datapoints": 3,
+            "ready_datapoints": 9,
+            "completed_datapoints": 4,
+            "failed_datapoints": 0,
+            "total_responses": 0,
+            "max_responses_per_datapoint": 10,
+            "cost_usd": 0.0,
+            "errors": [],
+        }
+        base.update(overrides)
+        return base
+
+    def test_paused_flag_appended_to_status_line(self):
+        out = _format_check_survey(self._status(is_paused=True), None)
+        self.assertIn("Status: active (paused)", out)
+
+    def test_paused_absent_does_not_modify_status_line(self):
+        out = _format_check_survey(self._status(), None)
+        self.assertIn("Status: active", out)
+        self.assertNotIn("(paused)", out)
+
+    def test_active_count_excludes_completed(self):
+        # ready=9, completed=4, so active should be 5
+        out = _format_check_survey(self._status(), None)
+        self.assertIn("active: 5", out)
+        self.assertIn("completed: 4", out)
+
+    def test_queued_count_surfaces_processing_datapoints(self):
+        out = _format_check_survey(self._status(), None)
+        self.assertIn("queued: 3", out)
+
+
 if __name__ == "__main__":
     unittest.main()
