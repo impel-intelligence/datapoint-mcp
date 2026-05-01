@@ -92,6 +92,14 @@ class DatapointClient:
     def list_jobs(self) -> dict:
         return self._request("GET", "/jobs")
 
+    def pause_job(self, job_id: str) -> dict:
+        """POST /jobs/{job_id}/pause — stops serving new tasks."""
+        return self._request("POST", f"/jobs/{job_id}/pause")
+
+    def resume_job(self, job_id: str) -> dict:
+        """POST /jobs/{job_id}/resume — resumes task serving."""
+        return self._request("POST", f"/jobs/{job_id}/resume")
+
     def plan_survey(self, description: str, preferences: dict | None = None) -> dict:
         body: dict = {"description": description}
         if preferences:
