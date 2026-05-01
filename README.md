@@ -13,6 +13,8 @@ An MCP server that gives Claude Code tools for creating and managing human evalu
 | `check_survey` | Check status, progress, and aggregated results |
 | `get_survey_responses` | Get the raw per-annotator responses (paginated) |
 | `list_surveys` | List all your surveys |
+| `pause_survey` | Pause task serving for an active survey (in-flight responses keep arriving) |
+| `resume_survey` | Resume task serving for a paused survey |
 | `check_balance` | Check your account balance |
 | `add_credits` | Open a checkout link to top up your account |
 
