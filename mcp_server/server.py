@@ -421,6 +421,70 @@ def create_survey(plan: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _format_check_survey(status: dict, results_data: dict | None) -> str:
+    """Format a job-status response (and optional results page) for chat."""
+    total_needed = status.get("total_datapoints", 0) * status.get("max_responses_per_datapoint", 0)
+    total_got = status.get("total_responses", 0)
+    progress_pct = (total_got / total_needed * 100) if total_needed > 0 else 0
+
+    lines = [
+        f"Survey: {status.get('name', status.get('job_id', '?'))}",
+        f"Status: {status['status']}",
+        f"Progress: {total_got}/{total_needed} responses ({progress_pct:.0f}%)",
+        f"  Datapoints — completed: {status.get('completed_datapoints', 0)}, "
+        f"active: {status.get('ready_datapoints', 0)}, "
+        f"failed: {status.get('failed_datapoints', 0)}",
+        f"Cost so far: ${status.get('cost_usd', 0):.2f}",
+    ]
+
+    errors = status.get("errors", [])
+    if errors:
+        lines.append(f"\nErrors ({len(errors)}):")
+        for err in errors[:5]:
+            lines.append(f"  Datapoint {err['datapoint_index']}: {err['error']}")
+
+    if results_data is None:
+        return "\n".join(lines)
+
+    fetch_error = results_data.get("_fetch_error")
+    if fetch_error:
+        lines.append(f"\n(Could not fetch results: {fetch_error})")
+        return "\n".join(lines)
+
+    results = results_data.get("results", [])
+    if results:
+        lines.append(f"\nResults ({len(results)} datapoints):")
+        lines.append(f"Task type: {results_data.get('task_type', 'unknown')}")
+        lines.append("")
+
+        for r in results:
+            dp_line = f"  Datapoint {r.get('datapoint_index', '?')}"
+            if r.get("context"):
+                dp_line += f" ({r['context'][:60]})"
+            lines.append(dp_line)
+
+            if r.get("consensus"):
+                votes = r.get("votes", {})
+                confidence = r.get("confidence", 0)
+                lines.append(f"    Consensus: {r['consensus']} (confidence: {confidence:.0%})")
+                lines.append(f"    Votes: {votes}")
+
+            if r.get("mean") is not None:
+                lines.append(f"    Mean: {r['mean']:.2f}, Median: {r.get('median', 'N/A')}")
+                if r.get("distribution"):
+                    lines.append(f"    Distribution: {r['distribution']}")
+
+            if r.get("ranking_order"):
+                lines.append(f"    Ranking: {r['ranking_order']}")
+                if r.get("average_ranks"):
+                    lines.append(f"    Average ranks: {r['average_ranks']}")
+
+            lines.append(f"    Responses: {r.get('total_responses', 0)}")
+            lines.append("")
+
+    return "\n".join(lines)
+
+
 @mcp.tool()
 def check_survey(job_id: str) -> str:
     """Check the status, progress, and results of a survey.
@@ -435,70 +499,16 @@ def check_survey(job_id: str) -> str:
     except DatapointAPIError as e:
         return f"Error: {e.detail}"
 
-    total_needed = status.get("total_datapoints", 0) * status.get("max_responses_per_datapoint", 0)
-    total_got = status.get("total_responses", 0)
-    progress_pct = (total_got / total_needed * 100) if total_needed > 0 else 0
-
-    lines = [
-        f"Survey: {status.get('name', job_id)}",
-        f"Status: {status['status']}",
-        f"Progress: {total_got}/{total_needed} responses ({progress_pct:.0f}%)",
-        f"  Datapoints — completed: {status.get('completed_datapoints', 0)}, "
-        f"active: {status.get('ready_datapoints', 0)}, "
-        f"failed: {status.get('failed_datapoints', 0)}",
-        f"Cost so far: ${status.get('cost_usd', 0):.2f}",
-    ]
-
-    # Show errors if any
-    errors = status.get("errors", [])
-    if errors:
-        lines.append(f"\nErrors ({len(errors)}):")
-        for err in errors[:5]:
-            lines.append(f"  Datapoint {err['datapoint_index']}: {err['error']}")
-
-    # If job has completed datapoints, fetch results
+    results_data: dict | None = None
     if status.get("completed_datapoints", 0) > 0:
         try:
-            results_data = client.get_job_results(job_id)
-            results = sanitize_results(results_data.get("results", []))
-
-            if results:
-                lines.append(f"\nResults ({len(results)} datapoints):")
-                lines.append(f"Task type: {results_data.get('task_type', 'unknown')}")
-                lines.append("")
-
-                for r in results:
-                    dp_line = f"  Datapoint {r.get('datapoint_index', '?')}"
-                    if r.get("context"):
-                        dp_line += f" ({r['context'][:60]})"
-                    lines.append(dp_line)
-
-                    # Comparison results
-                    if r.get("consensus"):
-                        votes = r.get("votes", {})
-                        confidence = r.get("confidence", 0)
-                        lines.append(f"    Consensus: {r['consensus']} (confidence: {confidence:.0%})")
-                        lines.append(f"    Votes: {votes}")
-
-                    # Rating results
-                    if r.get("mean") is not None:
-                        lines.append(f"    Mean: {r['mean']:.2f}, Median: {r.get('median', 'N/A')}")
-                        if r.get("distribution"):
-                            lines.append(f"    Distribution: {r['distribution']}")
-
-                    # Ranking results
-                    if r.get("ranking_order"):
-                        lines.append(f"    Ranking: {r['ranking_order']}")
-                        if r.get("average_ranks"):
-                            lines.append(f"    Average ranks: {r['average_ranks']}")
-
-                    lines.append(f"    Responses: {r.get('total_responses', 0)}")
-                    lines.append("")
-
+            fetched = client.get_job_results(job_id)
+            fetched["results"] = sanitize_results(fetched.get("results", []))
+            results_data = fetched
         except DatapointAPIError as e:
-            lines.append(f"\n(Could not fetch results: {e.detail})")
+            results_data = {"_fetch_error": str(e.detail)}
 
-    return "\n".join(lines)
+    return _format_check_survey(status, results_data)
 
 
 # ---------------------------------------------------------------------------
