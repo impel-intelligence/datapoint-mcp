@@ -358,5 +358,53 @@ class FormatLifecycleResponseTests(unittest.TestCase):
         self.assertEqual(out, "Resumed survey job_y. Status: active, is_paused: false.")
 
 
+from mcp_server.server import _format_list_surveys
+
+
+class FormatListSurveysTests(unittest.TestCase):
+    def test_empty_list_message(self):
+        out = _format_list_surveys({"jobs": [], "total": 0})
+        self.assertIn("No surveys", out)
+
+    def test_active_job_renders_active_icon(self):
+        data = {
+            "jobs": [
+                {"job_id": "job_a", "name": "alpha", "status": "active", "task_type": "comparison"}
+            ],
+            "total": 1,
+        }
+        out = _format_list_surveys(data)
+        self.assertIn("[active]", out)
+        self.assertIn("alpha", out)
+
+    def test_paused_flag_prepends_paused_marker(self):
+        data = {
+            "jobs": [
+                {
+                    "job_id": "job_p",
+                    "name": "paused-one",
+                    "status": "active",
+                    "task_type": "rating",
+                    "is_paused": True,
+                }
+            ],
+            "total": 1,
+        }
+        out = _format_list_surveys(data)
+        self.assertIn("[paused] [active]", out)
+        self.assertIn("paused-one", out)
+
+    def test_missing_is_paused_falls_back_to_status_only(self):
+        data = {
+            "jobs": [
+                {"job_id": "job_z", "name": "no-flag", "status": "completed", "task_type": "ranking"}
+            ],
+            "total": 1,
+        }
+        out = _format_list_surveys(data)
+        self.assertIn("[done]", out)
+        self.assertNotIn("[paused]", out)
+
+
 if __name__ == "__main__":
     unittest.main()

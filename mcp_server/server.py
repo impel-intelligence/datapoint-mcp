@@ -560,16 +560,8 @@ def check_survey(job_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
-def list_surveys() -> str:
-    """List all your surveys (active and recent)."""
-    client = _get_client()
-
-    try:
-        data = client.list_jobs()
-    except DatapointAPIError as e:
-        return f"Error: {e.detail}"
-
+def _format_list_surveys(data: dict) -> str:
+    """Format a /jobs list response for chat."""
     jobs = data.get("jobs", [])
     if not jobs:
         return "No surveys found. Use create_survey to create one."
@@ -581,7 +573,11 @@ def list_surveys() -> str:
             "completed": "[done]",
             "processing": "[processing]",
             "failed": "[failed]",
+            "paused": "[paused]",
         }.get(job.get("status", ""), f"[{job.get('status', '?')}]")
+
+        if job.get("is_paused"):
+            status_icon = "[paused] " + status_icon
 
         lines.append(
             f"  {status_icon} {job.get('name', 'Unnamed')} "
@@ -589,6 +585,17 @@ def list_surveys() -> str:
         )
 
     return "\n".join(lines)
+
+
+@mcp.tool()
+def list_surveys() -> str:
+    """List all your surveys (active and recent)."""
+    client = _get_client()
+    try:
+        data = client.list_jobs()
+    except DatapointAPIError as e:
+        return f"Error: {e.detail}"
+    return _format_list_surveys(data)
 
 
 # ---------------------------------------------------------------------------
