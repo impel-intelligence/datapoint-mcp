@@ -287,5 +287,63 @@ class FormatResponsesPageStandaloneTests(unittest.TestCase):
         self.assertIn("'B'", out)
 
 
+class FormatResponsesPageChainTests(unittest.TestCase):
+    def _chain_data(self) -> dict:
+        return {
+            "total_responses": 4,
+            "responses": [
+                {
+                    "datapoint_index": 0,
+                    "step_index": 0,
+                    "task_type": "multiple_choice",
+                    "annotator_id": "anon_alpha",
+                    "timestamp": "t1",
+                    "response": "yes",
+                    "response_time_ms": 4800,
+                },
+                {
+                    "datapoint_index": 0,
+                    "step_index": 1,
+                    "task_type": "rating",
+                    "annotator_id": "anon_alpha",
+                    "timestamp": "t2",
+                    "response": "4",
+                    "response_time_ms": 3200,
+                },
+                {
+                    "datapoint_index": 0,
+                    "step_index": 0,
+                    "task_type": "multiple_choice",
+                    "annotator_id": "anon_beta",
+                    "timestamp": "t3",
+                    "response": "no",
+                    "response_time_ms": 2100,
+                },
+                {
+                    "datapoint_index": 1,
+                    "step_index": 0,
+                    "task_type": "multiple_choice",
+                    "annotator_id": "anon_gamma",
+                    "timestamp": "t4",
+                    "response": "yes",
+                    "response_time_ms": 5500,
+                },
+            ],
+        }
+
+    def test_groups_by_datapoint_then_step(self):
+        out = _format_responses_page(self._chain_data(), job_id="job_c", page=1, per_page=100)
+        self.assertIn("Datapoint 0 (3 responses across 2 steps):", out)
+        self.assertIn("Datapoint 1 (1 response across 1 step):", out)
+        self.assertIn("Step 0 [multiple_choice]", out)
+        self.assertIn("Step 1 [rating]", out)
+        self.assertIn("    - anon_alp", out)
+
+    def test_chain_step_drop_off_visible(self):
+        out = _format_responses_page(self._chain_data(), job_id="job_c", page=1, per_page=100)
+        self.assertIn("Step 0 [multiple_choice] — 2 responses", out)
+        self.assertIn("Step 1 [rating] — 1 response", out)
+
+
 if __name__ == "__main__":
     unittest.main()

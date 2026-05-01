@@ -614,22 +614,51 @@ def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) ->
     if not responses:
         return f"No responses yet for job {job_id}."
 
-    by_datapoint: dict[int, list[dict]] = {}
-    for r in responses:
-        by_datapoint.setdefault(r.get("datapoint_index", -1), []).append(r)
+    is_chain = any(r.get("step_index") is not None for r in responses)
 
     lines = [
         f"Raw responses — job {job_id}",
         f"Showing {len(responses)} of {total} total (page {page}, {per_page} per page)",
         "",
     ]
-    for idx in sorted(by_datapoint):
-        items = by_datapoint[idx]
-        plural = "s" if len(items) != 1 else ""
-        lines.append(f"Datapoint {idx} ({len(items)} response{plural}):")
-        for r in items:
-            lines.append(f"  - {_format_response_row(r)}")
-        lines.append("")
+
+    if is_chain:
+        by_dp_step: dict[int, dict[int, list[dict]]] = {}
+        for r in responses:
+            dp = r.get("datapoint_index", -1)
+            si = r.get("step_index", -1)
+            by_dp_step.setdefault(dp, {}).setdefault(si, []).append(r)
+
+        for dp_idx in sorted(by_dp_step):
+            steps = by_dp_step[dp_idx]
+            total_rows = sum(len(rs) for rs in steps.values())
+            lines.append(
+                f"Datapoint {dp_idx} ({total_rows} response"
+                f"{'s' if total_rows != 1 else ''} across {len(steps)} step"
+                f"{'s' if len(steps) != 1 else ''}):"
+            )
+            for step_idx in sorted(steps):
+                items = steps[step_idx]
+                tt = items[0].get("task_type", "?")
+                lines.append(
+                    f"  Step {step_idx} [{tt}] — {len(items)} response"
+                    f"{'s' if len(items) != 1 else ''}:"
+                )
+                for r in items:
+                    lines.append(f"    - {_format_response_row(r)}")
+            lines.append("")
+    else:
+        by_datapoint: dict[int, list[dict]] = {}
+        for r in responses:
+            by_datapoint.setdefault(r.get("datapoint_index", -1), []).append(r)
+
+        for idx in sorted(by_datapoint):
+            items = by_datapoint[idx]
+            plural = "s" if len(items) != 1 else ""
+            lines.append(f"Datapoint {idx} ({len(items)} response{plural}):")
+            for r in items:
+                lines.append(f"  - {_format_response_row(r)}")
+            lines.append("")
 
     total_pages = -(-total // per_page) if per_page > 0 else 1
     if page < total_pages:
