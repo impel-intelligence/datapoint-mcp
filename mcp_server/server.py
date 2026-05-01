@@ -596,6 +596,48 @@ def list_surveys() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _format_response_row(r: dict) -> str:
+    """Render one raw-response row as a single chat-display string."""
+    annotator = (r.get("annotator_id") or "?")[:8]
+    timestamp = r.get("timestamp") or "?"
+    response_text = r.get("response")
+    rt_ms = r.get("response_time_ms")
+    rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
+    return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}"
+
+
+def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) -> str:
+    """Format a /jobs/{id}/responses page (already sanitized) for chat."""
+    responses = data.get("responses", [])
+    total = data.get("total_responses", 0)
+
+    if not responses:
+        return f"No responses yet for job {job_id}."
+
+    by_datapoint: dict[int, list[dict]] = {}
+    for r in responses:
+        by_datapoint.setdefault(r.get("datapoint_index", -1), []).append(r)
+
+    lines = [
+        f"Raw responses — job {job_id}",
+        f"Showing {len(responses)} of {total} total (page {page}, {per_page} per page)",
+        "",
+    ]
+    for idx in sorted(by_datapoint):
+        items = by_datapoint[idx]
+        plural = "s" if len(items) != 1 else ""
+        lines.append(f"Datapoint {idx} ({len(items)} response{plural}):")
+        for r in items:
+            lines.append(f"  - {_format_response_row(r)}")
+        lines.append("")
+
+    total_pages = -(-total // per_page) if per_page > 0 else 1
+    if page < total_pages:
+        lines.append(f"More responses available — call again with page={page + 1}.")
+
+    return "\n".join(lines)
+
+
 @mcp.tool()
 def get_survey_responses(job_id: str, page: int = 1, per_page: int = 100) -> str:
     """Get the raw per-annotator responses for a survey.
@@ -617,39 +659,8 @@ def get_survey_responses(job_id: str, page: int = 1, per_page: int = 100) -> str
     except DatapointAPIError as e:
         return f"Error: {e.detail}"
 
-    responses = sanitize_responses(data.get("responses", []))
-    total = data.get("total_responses", 0)
-
-    if not responses:
-        return f"No responses yet for job {job_id}."
-
-    by_datapoint: dict[int, list[dict]] = {}
-    for r in responses:
-        by_datapoint.setdefault(r.get("datapoint_index", -1), []).append(r)
-
-    lines = [
-        f"Raw responses — job {job_id}",
-        f"Showing {len(responses)} of {total} total (page {page}, {per_page} per page)",
-        "",
-    ]
-    for idx in sorted(by_datapoint):
-        items = by_datapoint[idx]
-        plural = "s" if len(items) != 1 else ""
-        lines.append(f"Datapoint {idx} ({len(items)} response{plural}):")
-        for r in items:
-            annotator = (r.get("annotator_id") or "?")[:8]
-            timestamp = r.get("timestamp") or "?"
-            response_text = r.get("response")
-            rt_ms = r.get("response_time_ms")
-            rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
-            lines.append(f"  - {annotator} @ {timestamp}: {response_text!r}{rt_str}")
-        lines.append("")
-
-    total_pages = -(-total // per_page) if per_page > 0 else 1
-    if page < total_pages:
-        lines.append(f"More responses available — call again with page={page + 1}.")
-
-    return "\n".join(lines)
+    data["responses"] = sanitize_responses(data.get("responses", []))
+    return _format_responses_page(data, job_id=job_id, page=page, per_page=per_page)
 
 
 # ---------------------------------------------------------------------------

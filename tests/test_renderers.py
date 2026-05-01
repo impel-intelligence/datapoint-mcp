@@ -233,5 +233,59 @@ class FormatCheckSurveyStatusBlockTests(unittest.TestCase):
         self.assertIn("queued: 3", out)
 
 
+from mcp_server.server import _format_response_row, _format_responses_page
+
+
+class FormatResponseRowTests(unittest.TestCase):
+    def test_includes_annotator_timestamp_response(self):
+        row = {
+            "annotator_id": "anon_8f2cd1a3e9",
+            "timestamp": "2026-04-21 12:37:18.452731+00:00",
+            "response": "A",
+            "response_time_ms": 4832,
+        }
+        out = _format_response_row(row)
+        self.assertIn("anon_8f2", out)
+        self.assertIn("2026-04-21 12:37:18.452731+00:00", out)
+        self.assertIn("'A'", out)
+        self.assertIn("(4.8s)", out)
+
+    def test_response_time_converted_to_seconds(self):
+        out = _format_response_row({"response_time_ms": 12345, "response": "x"})
+        self.assertIn("(12.3s)", out)
+
+    def test_missing_response_time_omits_seconds(self):
+        out = _format_response_row({"response": "x", "annotator_id": "abcd"})
+        self.assertNotIn("s)", out)
+
+
+class FormatResponsesPageStandaloneTests(unittest.TestCase):
+    def test_groups_by_datapoint(self):
+        data = {
+            "total_responses": 2,
+            "responses": [
+                {
+                    "datapoint_index": 0,
+                    "annotator_id": "anon_1",
+                    "timestamp": "t1",
+                    "response": "A",
+                    "response_time_ms": 1000,
+                },
+                {
+                    "datapoint_index": 1,
+                    "annotator_id": "anon_2",
+                    "timestamp": "t2",
+                    "response": "B",
+                    "response_time_ms": 2000,
+                },
+            ],
+        }
+        out = _format_responses_page(data, job_id="job_x", page=1, per_page=100)
+        self.assertIn("Datapoint 0", out)
+        self.assertIn("Datapoint 1", out)
+        self.assertIn("'A'", out)
+        self.assertIn("'B'", out)
+
+
 if __name__ == "__main__":
     unittest.main()
