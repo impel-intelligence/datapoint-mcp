@@ -9,7 +9,14 @@ from __future__ import annotations
 
 import unittest
 
-from mcp_server.server import _format_check_survey
+from mcp_server.server import (
+    _format_check_survey,
+    _format_lifecycle_response,
+    _format_list_surveys,
+    _format_response_row,
+    _format_responses_page,
+    _render_aggregation,
+)
 
 
 class FormatCheckSurveyStandaloneTests(unittest.TestCase):
@@ -60,9 +67,6 @@ class FormatCheckSurveyStandaloneTests(unittest.TestCase):
         self.assertIn("Consensus: A", out)
         self.assertIn("70%", out)
         self.assertIn("'A': 7", out)
-
-
-from mcp_server.server import _render_aggregation
 
 
 class RenderAggregationTests(unittest.TestCase):
@@ -233,9 +237,6 @@ class FormatCheckSurveyStatusBlockTests(unittest.TestCase):
         self.assertIn("queued: 3", out)
 
 
-from mcp_server.server import _format_response_row, _format_responses_page
-
-
 class FormatResponseRowTests(unittest.TestCase):
     def test_includes_annotator_timestamp_response(self):
         row = {
@@ -345,9 +346,6 @@ class FormatResponsesPageChainTests(unittest.TestCase):
         self.assertIn("Step 1 [rating] — 1 response", out)
 
 
-from mcp_server.server import _format_lifecycle_response
-
-
 class FormatLifecycleResponseTests(unittest.TestCase):
     def test_paused_response(self):
         out = _format_lifecycle_response("Paused", {"job_id": "job_x", "status": "active", "is_paused": True})
@@ -356,9 +354,6 @@ class FormatLifecycleResponseTests(unittest.TestCase):
     def test_resumed_response(self):
         out = _format_lifecycle_response("Resumed", {"job_id": "job_y", "status": "active", "is_paused": False})
         self.assertEqual(out, "Resumed survey job_y. Status: active, is_paused: false.")
-
-
-from mcp_server.server import _format_list_surveys
 
 
 class FormatListSurveysTests(unittest.TestCase):
@@ -404,6 +399,24 @@ class FormatListSurveysTests(unittest.TestCase):
         out = _format_list_surveys(data)
         self.assertIn("[done]", out)
         self.assertNotIn("[paused]", out)
+
+    def test_paused_status_with_is_paused_does_not_double_prefix(self):
+        # If the API ever surfaces both status="paused" and is_paused=true, the
+        # icon must appear once, not twice ("[paused] [paused]").
+        data = {
+            "jobs": [
+                {
+                    "job_id": "job_pp",
+                    "name": "double-paused",
+                    "status": "paused",
+                    "task_type": "comparison",
+                    "is_paused": True,
+                }
+            ],
+            "total": 1,
+        }
+        out = _format_list_surveys(data)
+        self.assertEqual(out.count("[paused]"), 1)
 
 
 if __name__ == "__main__":

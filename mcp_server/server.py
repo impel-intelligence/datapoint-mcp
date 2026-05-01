@@ -424,13 +424,9 @@ def create_survey(plan: dict) -> str:
 def _render_aggregation(agg: dict, task_type: str | None = None, indent: str = "    ") -> list[str]:
     """Render the per-task-type aggregation lines for one result block.
 
-    Used by `_format_check_survey` for both standalone results (one call per
-    datapoint) and chain step results (one call per step). Per the API's
-    documented result contract, a chain step's aggregation uses the same
-    fields as a standalone job of that step's task_type.
-
-    `task_type` is used when present; otherwise field-based detection picks
-    the right branch.
+    `task_type` selects the renderer when given; otherwise field-based
+    detection picks the right branch. The shape matches a standalone result
+    of the named task type.
     """
     lines: list[str] = []
     tt = task_type or ""
@@ -463,8 +459,12 @@ def _render_aggregation(agg: dict, task_type: str | None = None, indent: str = "
     return lines
 
 
-def _format_check_survey(status: dict, results_data: dict | None) -> str:
-    """Format a job-status response (and optional results page) for chat."""
+def _format_check_survey(status: dict, results_data: dict | None, results_error: str | None = None) -> str:
+    """Format a job-status response (and optional results page) for chat.
+
+    `results_data` is a /jobs/{id}/results body when available; pass
+    `results_error` instead when the results fetch failed.
+    """
     total_needed = status.get("total_datapoints", 0) * status.get("max_responses_per_datapoint", 0)
     total_got = status.get("total_responses", 0)
     progress_pct = (total_got / total_needed * 100) if total_needed > 0 else 0
@@ -493,12 +493,11 @@ def _format_check_survey(status: dict, results_data: dict | None) -> str:
         for err in errors[:5]:
             lines.append(f"  Datapoint {err['datapoint_index']}: {err['error']}")
 
-    if results_data is None:
+    if results_error:
+        lines.append(f"\n(Could not fetch results: {results_error})")
         return "\n".join(lines)
 
-    fetch_error = results_data.get("_fetch_error")
-    if fetch_error:
-        lines.append(f"\n(Could not fetch results: {fetch_error})")
+    if results_data is None:
         return "\n".join(lines)
 
     results = results_data.get("results", [])
@@ -544,20 +543,30 @@ def check_survey(job_id: str) -> str:
         return f"Error: {e.detail}"
 
     results_data: dict | None = None
+    results_error: str | None = None
     if status.get("completed_datapoints", 0) > 0:
         try:
             fetched = client.get_job_results(job_id)
             fetched["results"] = sanitize_results(fetched.get("results", []))
             results_data = fetched
         except DatapointAPIError as e:
-            results_data = {"_fetch_error": str(e.detail)}
+            results_error = str(e.detail)
 
-    return _format_check_survey(status, results_data)
+    return _format_check_survey(status, results_data, results_error)
 
 
 # ---------------------------------------------------------------------------
 # Tool: list_surveys
 # ---------------------------------------------------------------------------
+
+
+_STATUS_ICONS = {
+    "active": "[active]",
+    "completed": "[done]",
+    "processing": "[processing]",
+    "failed": "[failed]",
+    "paused": "[paused]",
+}
 
 
 def _format_list_surveys(data: dict) -> str:
@@ -568,15 +577,10 @@ def _format_list_surveys(data: dict) -> str:
 
     lines = [f"Your surveys ({len(jobs)} total):\n"]
     for job in jobs:
-        status_icon = {
-            "active": "[active]",
-            "completed": "[done]",
-            "processing": "[processing]",
-            "failed": "[failed]",
-            "paused": "[paused]",
-        }.get(job.get("status", ""), f"[{job.get('status', '?')}]")
+        status = job.get("status", "")
+        status_icon = _STATUS_ICONS.get(status, f"[{status or '?'}]")
 
-        if job.get("is_paused"):
+        if job.get("is_paused") and "[paused]" not in status_icon:
             status_icon = "[paused] " + status_icon
 
         lines.append(
@@ -611,6 +615,19 @@ def _format_lifecycle_response(verb: str, response: dict) -> str:
     return f"{verb} survey {job_id}. Status: {status}, is_paused: {str(is_paused).lower()}."
 
 
+def _run_lifecycle_action(action_verb: str, past_verb: str, client_method, job_id: str) -> str:
+    """Invoke a pause/resume client method and format the response or error."""
+    try:
+        result = client_method(job_id)
+    except DatapointAPIError as e:
+        if e.status_code == 400:
+            return f"Cannot {action_verb}: {e.detail}"
+        if e.status_code == 404:
+            return f"Survey not found: {job_id}"
+        return f"Error: {e.detail}"
+    return _format_lifecycle_response(past_verb, result)
+
+
 @mcp.tool()
 def pause_survey(job_id: str) -> str:
     """Pause task serving for an active survey.
@@ -623,15 +640,7 @@ def pause_survey(job_id: str) -> str:
         job_id: The job ID returned by create_survey.
     """
     client = _get_client()
-    try:
-        result = client.pause_job(job_id)
-    except DatapointAPIError as e:
-        if e.status_code == 400:
-            return f"Cannot pause: {e.detail}"
-        if e.status_code == 404:
-            return f"Survey not found: {job_id}"
-        return f"Error: {e.detail}"
-    return _format_lifecycle_response("Paused", result)
+    return _run_lifecycle_action("pause", "Paused", client.pause_job, job_id)
 
 
 @mcp.tool()
@@ -644,15 +653,7 @@ def resume_survey(job_id: str) -> str:
         job_id: The job ID returned by create_survey.
     """
     client = _get_client()
-    try:
-        result = client.resume_job(job_id)
-    except DatapointAPIError as e:
-        if e.status_code == 400:
-            return f"Cannot resume: {e.detail}"
-        if e.status_code == 404:
-            return f"Survey not found: {job_id}"
-        return f"Error: {e.detail}"
-    return _format_lifecycle_response("Resumed", result)
+    return _run_lifecycle_action("resume", "Resumed", client.resume_job, job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -668,6 +669,11 @@ def _format_response_row(r: dict) -> str:
     rt_ms = r.get("response_time_ms")
     rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
     return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}"
+
+
+def _pluralize(n: int, word: str) -> str:
+    """English plural for `word` based on count `n` (no irregular forms)."""
+    return f"{n} {word}{'s' if n != 1 else ''}"
 
 
 def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) -> str:
@@ -697,17 +703,13 @@ def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) ->
             steps = by_dp_step[dp_idx]
             total_rows = sum(len(rs) for rs in steps.values())
             lines.append(
-                f"Datapoint {dp_idx} ({total_rows} response"
-                f"{'s' if total_rows != 1 else ''} across {len(steps)} step"
-                f"{'s' if len(steps) != 1 else ''}):"
+                f"Datapoint {dp_idx} ({_pluralize(total_rows, 'response')} "
+                f"across {_pluralize(len(steps), 'step')}):"
             )
             for step_idx in sorted(steps):
                 items = steps[step_idx]
                 tt = items[0].get("task_type", "?")
-                lines.append(
-                    f"  Step {step_idx} [{tt}] — {len(items)} response"
-                    f"{'s' if len(items) != 1 else ''}:"
-                )
+                lines.append(f"  Step {step_idx} [{tt}] — {_pluralize(len(items), 'response')}:")
                 for r in items:
                     lines.append(f"    - {_format_response_row(r)}")
             lines.append("")
@@ -718,8 +720,7 @@ def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) ->
 
         for idx in sorted(by_datapoint):
             items = by_datapoint[idx]
-            plural = "s" if len(items) != 1 else ""
-            lines.append(f"Datapoint {idx} ({len(items)} response{plural}):")
+            lines.append(f"Datapoint {idx} ({_pluralize(len(items), 'response')}):")
             for r in items:
                 lines.append(f"  - {_format_response_row(r)}")
             lines.append("")
