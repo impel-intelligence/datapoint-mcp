@@ -592,6 +592,63 @@ def list_surveys() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool: pause_survey / resume_survey
+# ---------------------------------------------------------------------------
+
+
+def _format_lifecycle_response(verb: str, response: dict) -> str:
+    """Render the response from a pause/resume call."""
+    job_id = response.get("job_id", "?")
+    status = response.get("status", "?")
+    is_paused = response.get("is_paused", False)
+    return f"{verb} survey {job_id}. Status: {status}, is_paused: {str(is_paused).lower()}."
+
+
+@mcp.tool()
+def pause_survey(job_id: str) -> str:
+    """Pause task serving for an active survey.
+
+    In-flight responses keep arriving; new tasks stop being served. The
+    backend rejects with 400 if the survey is completed, failed, or already
+    paused — the message will say which.
+
+    Args:
+        job_id: The job ID returned by create_survey.
+    """
+    client = _get_client()
+    try:
+        result = client.pause_job(job_id)
+    except DatapointAPIError as e:
+        if e.status_code == 400:
+            return f"Cannot pause: {e.detail}"
+        if e.status_code == 404:
+            return f"Survey not found: {job_id}"
+        return f"Error: {e.detail}"
+    return _format_lifecycle_response("Paused", result)
+
+
+@mcp.tool()
+def resume_survey(job_id: str) -> str:
+    """Resume task serving for a paused survey.
+
+    Backend rejects with 400 if the survey is not paused.
+
+    Args:
+        job_id: The job ID returned by create_survey.
+    """
+    client = _get_client()
+    try:
+        result = client.resume_job(job_id)
+    except DatapointAPIError as e:
+        if e.status_code == 400:
+            return f"Cannot resume: {e.detail}"
+        if e.status_code == 404:
+            return f"Survey not found: {job_id}"
+        return f"Error: {e.detail}"
+    return _format_lifecycle_response("Resumed", result)
+
+
+# ---------------------------------------------------------------------------
 # Tool: get_survey_responses
 # ---------------------------------------------------------------------------
 

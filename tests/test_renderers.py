@@ -345,5 +345,18 @@ class FormatResponsesPageChainTests(unittest.TestCase):
         self.assertIn("Step 1 [rating] — 1 response", out)
 
 
+from mcp_server.server import _format_lifecycle_response
+
+
+class FormatLifecycleResponseTests(unittest.TestCase):
+    def test_paused_response(self):
+        out = _format_lifecycle_response("Paused", {"job_id": "job_x", "status": "active", "is_paused": True})
+        self.assertEqual(out, "Paused survey job_x. Status: active, is_paused: true.")
+
+    def test_resumed_response(self):
+        out = _format_lifecycle_response("Resumed", {"job_id": "job_y", "status": "active", "is_paused": False})
+        self.assertEqual(out, "Resumed survey job_y. Status: active, is_paused: false.")
+
+
 if __name__ == "__main__":
     unittest.main()
