@@ -615,17 +615,20 @@ def _format_lifecycle_response(verb: str, response: dict) -> str:
     return f"{verb} survey {job_id}. Status: {status}, is_paused: {str(is_paused).lower()}."
 
 
-def _run_lifecycle_action(action_verb: str, past_verb: str, client_method, job_id: str) -> str:
+_LIFECYCLE_PAST = {"pause": "Paused", "resume": "Resumed"}
+
+
+def _run_lifecycle_action(verb: str, client_method, job_id: str) -> str:
     """Invoke a pause/resume client method and format the response or error."""
     try:
         result = client_method(job_id)
     except DatapointAPIError as e:
         if e.status_code == 400:
-            return f"Cannot {action_verb}: {e.detail}"
+            return f"Cannot {verb}: {e.detail}"
         if e.status_code == 404:
             return f"Survey not found: {job_id}"
         return f"Error: {e.detail}"
-    return _format_lifecycle_response(past_verb, result)
+    return _format_lifecycle_response(_LIFECYCLE_PAST.get(verb, verb.capitalize()), result)
 
 
 @mcp.tool()
@@ -640,7 +643,7 @@ def pause_survey(job_id: str) -> str:
         job_id: The job ID returned by create_survey.
     """
     client = _get_client()
-    return _run_lifecycle_action("pause", "Paused", client.pause_job, job_id)
+    return _run_lifecycle_action("pause", client.pause_job, job_id)
 
 
 @mcp.tool()
@@ -653,7 +656,7 @@ def resume_survey(job_id: str) -> str:
         job_id: The job ID returned by create_survey.
     """
     client = _get_client()
-    return _run_lifecycle_action("resume", "Resumed", client.resume_job, job_id)
+    return _run_lifecycle_action("resume", client.resume_job, job_id)
 
 
 # ---------------------------------------------------------------------------

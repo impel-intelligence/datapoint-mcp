@@ -19,25 +19,39 @@ from mcp_server.server import (
 )
 
 
+def _make_status(**overrides) -> dict:
+    """Build a JobStatusResponse-shaped dict with sensible defaults."""
+    base = {
+        "job_id": "job_x",
+        "name": "test-job",
+        "status": "active",
+        "task_type": "comparison",
+        "total_datapoints": 0,
+        "processing_datapoints": 0,
+        "ready_datapoints": 0,
+        "completed_datapoints": 0,
+        "failed_datapoints": 0,
+        "total_responses": 0,
+        "max_responses_per_datapoint": 10,
+        "cost_usd": 0.0,
+        "errors": [],
+    }
+    base.update(overrides)
+    return base
+
+
 class FormatCheckSurveyStandaloneTests(unittest.TestCase):
     def _status(self, **overrides) -> dict:
-        base = {
-            "job_id": "job_abc",
-            "name": "logo-pref",
-            "status": "active",
-            "task_type": "comparison",
-            "total_datapoints": 10,
-            "processing_datapoints": 0,
-            "ready_datapoints": 8,
-            "completed_datapoints": 4,
-            "failed_datapoints": 0,
-            "total_responses": 42,
-            "max_responses_per_datapoint": 10,
-            "cost_usd": 1.23,
-            "errors": [],
-        }
-        base.update(overrides)
-        return base
+        return _make_status(
+            job_id="job_abc",
+            name="logo-pref",
+            total_datapoints=10,
+            ready_datapoints=8,
+            completed_datapoints=4,
+            total_responses=42,
+            cost_usd=1.23,
+            **overrides,
+        )
 
     def _comparison_results(self) -> dict:
         return {
@@ -139,21 +153,16 @@ class RenderAggregationTests(unittest.TestCase):
 
 class FormatCheckSurveyChainTests(unittest.TestCase):
     def _status(self) -> dict:
-        return {
-            "job_id": "job_chain",
-            "name": "vid-quality-chain",
-            "status": "active",
-            "task_type": "chain",
-            "total_datapoints": 1,
-            "processing_datapoints": 0,
-            "ready_datapoints": 1,
-            "completed_datapoints": 1,
-            "failed_datapoints": 0,
-            "total_responses": 18,
-            "max_responses_per_datapoint": 10,
-            "cost_usd": 0.36,
-            "errors": [],
-        }
+        return _make_status(
+            job_id="job_chain",
+            name="vid-quality-chain",
+            task_type="chain",
+            total_datapoints=1,
+            ready_datapoints=1,
+            completed_datapoints=1,
+            total_responses=18,
+            cost_usd=0.36,
+        )
 
     def _chain_results(self) -> dict:
         return {
@@ -189,33 +198,21 @@ class FormatCheckSurveyChainTests(unittest.TestCase):
         self.assertIn("Datapoint 0", out)
         self.assertIn("Step 0 [multiple_choice]", out)
         self.assertIn("Step 1 [rating]", out)
-        # Per-step aggregation deeper indent (six spaces)
         self.assertIn("      Consensus: yes", out)
         self.assertIn("      Mean: 3.70", out)
-        # Drop-off across steps is visible (10 -> 8)
         self.assertIn("      Responses: 10", out)
         self.assertIn("      Responses: 8", out)
 
 
 class FormatCheckSurveyStatusBlockTests(unittest.TestCase):
     def _status(self, **overrides) -> dict:
-        base = {
-            "job_id": "job_x",
-            "name": "n",
-            "status": "active",
-            "task_type": "comparison",
-            "total_datapoints": 12,
-            "processing_datapoints": 3,
-            "ready_datapoints": 9,
-            "completed_datapoints": 4,
-            "failed_datapoints": 0,
-            "total_responses": 0,
-            "max_responses_per_datapoint": 10,
-            "cost_usd": 0.0,
-            "errors": [],
-        }
-        base.update(overrides)
-        return base
+        return _make_status(
+            total_datapoints=12,
+            processing_datapoints=3,
+            ready_datapoints=9,
+            completed_datapoints=4,
+            **overrides,
+        )
 
     def test_paused_flag_appended_to_status_line(self):
         out = _format_check_survey(self._status(is_paused=True), None)
