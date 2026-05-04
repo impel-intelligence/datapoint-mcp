@@ -465,9 +465,17 @@ def _format_check_survey(status: dict, results_data: dict | None, results_error:
     `results_data` is a /jobs/{id}/results body when available; pass
     `results_error` instead when the results fetch failed.
     """
-    total_needed = status.get("total_datapoints", 0) * status.get("max_responses_per_datapoint", 0)
-    total_got = status.get("total_responses", 0)
-    progress_pct = (total_got / total_needed * 100) if total_needed > 0 else 0
+    chain_progress = status.get("chain_progress")
+    if chain_progress is not None:
+        got = chain_progress["completed_walks"]
+        total = chain_progress["target_walks"]
+        unit = "chain walks"
+    else:
+        got = status.get("total_responses", 0)
+        total = status.get("total_datapoints", 0) * status.get("max_responses_per_datapoint", 0)
+        unit = "responses"
+    pct = (got / total * 100) if total > 0 else 0
+    progress_line = f"Progress: {got}/{total} {unit} ({pct:.0f}%)"
 
     status_line = f"Status: {status['status']}"
     if status.get("is_paused"):
@@ -479,7 +487,7 @@ def _format_check_survey(status: dict, results_data: dict | None, results_error:
     lines = [
         f"Survey: {status.get('name', status.get('job_id', '?'))}",
         status_line,
-        f"Progress: {total_got}/{total_needed} responses ({progress_pct:.0f}%)",
+        progress_line,
         f"  Datapoints — queued: {status.get('processing_datapoints', 0)}, "
         f"active: {ready - completed}, "
         f"completed: {completed}, "
