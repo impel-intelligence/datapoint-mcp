@@ -204,6 +204,27 @@ class FormatCheckSurveyChainTests(unittest.TestCase):
         self.assertIn("      Responses: 8", out)
 
 
+class FormatCheckSurveyChainProgressTests(unittest.TestCase):
+    def _chain_status(self, **overrides) -> dict:
+        return _make_status(
+            task_type="chain",
+            total_datapoints=2,
+            max_responses_per_datapoint=200,
+            total_responses=10,
+            chain_progress={"completed_walks": 5, "target_walks": 200},
+            **overrides,
+        )
+
+    def test_chain_progress_renders_walks_not_responses(self):
+        out = _format_check_survey(self._chain_status(), None)
+        self.assertIn("5/200 chain walks (2%)", out)
+        self.assertNotIn("10/400", out)
+
+    def test_missing_chain_progress_falls_back_to_responses(self):
+        out = _format_check_survey(_make_status(total_datapoints=2, total_responses=10), None)
+        self.assertIn("10/20 responses", out)
+
+
 class FormatCheckSurveyStatusBlockTests(unittest.TestCase):
     def _status(self, **overrides) -> dict:
         return _make_status(
