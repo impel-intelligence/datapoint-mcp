@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "datapoint-mcp"
-version = "0.1.4"
+version = "0.1.5"
 description = "MCP server for creating human evaluation surveys via Datapoint AI"
 license = "MIT"
 license-files = ["LICENSE"]
