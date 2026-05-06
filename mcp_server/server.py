@@ -174,6 +174,29 @@ def upload_media(file_paths: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _format_audience_targeting(plan: dict) -> list[str]:
+    """Render annotator_filter / annotator_distribution as user-visible lines."""
+    out: list[str] = []
+    annotator_filter = plan.get("annotator_filter")
+    if annotator_filter:
+        parts = [f"{col} in [{_render_filter_values(vals)}]" for col, vals in annotator_filter.items()]
+        out.append(f"Targeting: {'; '.join(parts)}")
+    distribution = plan.get("annotator_distribution")
+    if distribution:
+        out.append(f"Balanced by: {', '.join(distribution)}")
+    return out
+
+
+def _render_filter_values(vals: list) -> str:
+    rendered = []
+    for v in vals:
+        if isinstance(v, bool):
+            rendered.append("true" if v else "false")
+        else:
+            rendered.append(str(v))
+    return ", ".join(rendered)
+
+
 def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
     """Render a standalone (non-chain) plan for user confirmation."""
     lines = [
@@ -185,6 +208,7 @@ def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnin
         f"Responses per datapoint: {plan.get('max_responses_per_datapoint', '?')}",
         f"Estimated cost: ${cost:.2f}",
     ]
+    lines.extend(_format_audience_targeting(plan))
     if warnings:
         lines.append("")
         lines.append("Warnings:")
@@ -220,9 +244,10 @@ def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: l
         f"Chain length: {len(steps)} step(s) in order",
         f"Datapoints: {len(datapoints)} (each walked by up to {max_resp} annotators)",
         f"Estimated cost: ${cost:.2f} (upper bound — partial walks cost less)",
-        "",
-        "Chain structure:",
     ]
+    lines.extend(_format_audience_targeting(plan))
+    lines.append("")
+    lines.append("Chain structure:")
     for idx, step in enumerate(steps):
         task_type = step.get("task_type", "?")
         instruction = step.get("instruction", "(no instruction)")
@@ -290,9 +315,11 @@ def plan_survey(description: str, max_responses: int = 10) -> str:
     these two calls — `create_survey` spends money and dispatches real work.
 
     Args:
-        description: What you want to survey, in plain language. Include target
-            audience, what you're comparing/rating, any screening criteria, and
-            — for media surveys — the dp:// or https:// URLs to use.
+        description: What you want to survey, in plain language. Include the
+            target audience, what you're comparing/rating, any screening
+            criteria — including who should answer (e.g. respondents in
+            specific countries, excluding VPN/bot traffic, balanced regional
+            mix) — and, for media surveys, the dp:// or https:// URLs to use.
         max_responses: Number of human responses per datapoint (default 10).
             More = higher confidence but higher cost.
     """
