@@ -364,6 +364,87 @@ class FormatResponsesPageChainTests(unittest.TestCase):
         self.assertIn("Step 1 [rating] — 1 response", out)
 
 
+class FormatResponsesPageQuestionTests(unittest.TestCase):
+    def _row(self, **overrides) -> dict:
+        base = {
+            "datapoint_index": 0,
+            "annotator_id": "anon_1",
+            "timestamp": "t1",
+            "response": "yes",
+            "response_time_ms": 1200,
+        }
+        base.update(overrides)
+        return base
+
+    def test_standalone_renders_question_and_options(self):
+        data = {
+            "task_type": "multiple_choice",
+            "instruction": "Do you like coffee?",
+            "response_options": {"options": ["yes", "no"]},
+            "total_responses": 1,
+            "responses": [self._row()],
+        }
+        out = _format_responses_page(data, job_id="job_x", page=1, per_page=100)
+        self.assertIn("Question [multiple_choice]: Do you like coffee?", out)
+        self.assertIn("Options:", out)
+        self.assertIn("yes", out)
+        self.assertNotIn("Chain structure:", out)
+
+    def test_standalone_omits_question_line_when_instruction_null(self):
+        data = {
+            "task_type": "multiple_choice",
+            "instruction": None,
+            "response_options": None,
+            "total_responses": 1,
+            "responses": [self._row()],
+        }
+        out = _format_responses_page(data, job_id="job_x", page=1, per_page=100)
+        self.assertNotIn("Question", out)
+        self.assertNotIn("Options:", out)
+
+    def test_chain_renders_steps_overview(self):
+        data = {
+            "task_type": "chain",
+            "instruction": None,
+            "response_options": None,
+            "steps": [
+                {
+                    "step_index": 0,
+                    "task_type": "multiple_choice",
+                    "instruction": "Are you a coffee drinker?",
+                    "response_options": {"options": ["yes", "no"]},
+                    "skip_if": None,
+                },
+                {
+                    "step_index": 1,
+                    "task_type": "rating",
+                    "instruction": "Rate your last coffee 1-5",
+                    "response_options": {"min": 1, "max": 5},
+                    "skip_if": {"when_answer_equals": "no"},
+                },
+            ],
+            "total_responses": 1,
+            "responses": [self._row(step_index=0, task_type="multiple_choice")],
+        }
+        out = _format_responses_page(data, job_id="job_c", page=1, per_page=100)
+        self.assertIn("Chain structure:", out)
+        self.assertIn("Step 0 [multiple_choice] — Are you a coffee drinker?", out)
+        self.assertIn("Step 1 [rating] — Rate your last coffee 1-5", out)
+        self.assertIn("skip_if:", out)
+
+    def test_chain_steps_drive_chain_layout_even_without_step_index_on_rows(self):
+        data = {
+            "steps": [
+                {"step_index": 0, "task_type": "multiple_choice", "instruction": "Q1"},
+            ],
+            "total_responses": 1,
+            "responses": [self._row(step_index=0, task_type="multiple_choice")],
+        }
+        out = _format_responses_page(data, job_id="job_c", page=1, per_page=100)
+        self.assertIn("Chain structure:", out)
+        self.assertIn("Step 0", out)
+
+
 class FormatLifecycleResponseTests(unittest.TestCase):
     def test_paused_response(self):
         out = _format_lifecycle_response("Paused", {"job_id": "job_x", "status": "active", "is_paused": True})
