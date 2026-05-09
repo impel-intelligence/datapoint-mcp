@@ -712,6 +712,22 @@ def _format_annotator_location(r: dict) -> str:
     return ", ".join(p for p in parts if p)
 
 
+def _format_walk_outcome(r: dict) -> str:
+    """Render chain-walk outcome for atypical paths; empty for non-chain or the trivial happy case."""
+    chain = r.get("chain_outcome")
+    session = r.get("session_outcome")
+    if not chain and not session:
+        return ""
+    if chain == "answered" and session == "completed":
+        return ""
+    parts: list[str] = []
+    if chain:
+        parts.append(chain)
+    if session and session != "completed" and session != chain:
+        parts.append(session)
+    return f"walk: {' / '.join(parts)}" if parts else ""
+
+
 def _format_response_row(r: dict) -> str:
     """Render one raw-response row as a single chat-display string."""
     annotator = (r.get("annotator_id") or "?")[:8]
@@ -721,7 +737,9 @@ def _format_response_row(r: dict) -> str:
     rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
     location = _format_annotator_location(r)
     loc_str = f" — {location}" if location else ""
-    return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}{loc_str}"
+    walk = _format_walk_outcome(r)
+    walk_str = f" [{walk}]" if walk else ""
+    return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}{loc_str}{walk_str}"
 
 
 def _pluralize(n: int, word: str) -> str:
@@ -729,7 +747,14 @@ def _pluralize(n: int, word: str) -> str:
     return f"{n} {word}{'s' if n != 1 else ''}"
 
 
-def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) -> str:
+def _format_responses_page(
+    data: dict,
+    job_id: str,
+    page: int,
+    per_page: int,
+    include_abandoned: bool = False,
+    include_in_progress: bool = False,
+) -> str:
     """Format a /jobs/{id}/responses page (already sanitized) for chat."""
     responses = data.get("responses", [])
     total = data.get("total_responses", 0)
@@ -743,8 +768,12 @@ def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) ->
     lines = [
         f"Raw responses — job {job_id}",
         f"Showing {len(responses)} of {total} total (page {page}, {per_page} per page)",
-        "",
     ]
+    if include_abandoned:
+        lines.append("Including abandoned walks.")
+    if include_in_progress:
+        lines.append("Including in-flight walks.")
+    lines.append("")
 
     if steps_meta:
         lines.append("Chain structure:")
@@ -814,7 +843,13 @@ def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) ->
 
 
 @mcp.tool()
-def get_survey_responses(job_id: str, page: int = 1, per_page: int = 100) -> str:
+def get_survey_responses(
+    job_id: str,
+    page: int = 1,
+    per_page: int = 100,
+    include_abandoned: bool = False,
+    include_in_progress: bool = False,
+) -> str:
     """Get the raw per-annotator responses for a survey.
 
     `check_survey` returns aggregated results (consensus, votes, mean/median,
@@ -822,20 +857,39 @@ def get_survey_responses(job_id: str, page: int = 1, per_page: int = 100) -> str
     annotator — useful for spotting outliers, seeing the spread of opinion, or
     understanding disagreement.
 
+    The default view excludes answered rows from chain walks the annotator
+    abandoned mid-flow or that are still in progress, matching what counts
+    toward your survey's response total. Set the include flags to surface them.
+
     Args:
         job_id: The job ID returned by create_survey.
         page: Page number (default 1).
         per_page: Responses per page (default 100, max 200).
+        include_abandoned: Include answered rows from abandoned chain walks.
+        include_in_progress: Include answered rows from in-flight chain walks.
     """
     client = _get_client()
 
     try:
-        data = client.get_job_responses(job_id, page=page, per_page=per_page)
+        data = client.get_job_responses(
+            job_id,
+            page=page,
+            per_page=per_page,
+            include_abandoned=include_abandoned,
+            include_in_progress=include_in_progress,
+        )
     except DatapointAPIError as e:
         return f"Error: {e.detail}"
 
     data["responses"] = sanitize_responses(data.get("responses", []))
-    return _format_responses_page(data, job_id=job_id, page=page, per_page=per_page)
+    return _format_responses_page(
+        data,
+        job_id=job_id,
+        page=page,
+        per_page=per_page,
+        include_abandoned=include_abandoned,
+        include_in_progress=include_in_progress,
+    )
 
 
 # ---------------------------------------------------------------------------

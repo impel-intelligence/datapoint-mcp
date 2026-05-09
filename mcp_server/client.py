@@ -86,8 +86,20 @@ class DatapointClient:
     def get_job_results(self, job_id: str, page: int = 1, per_page: int = 100) -> dict:
         return self._request("GET", f"/jobs/{job_id}/results", params={"page": page, "per_page": per_page})
 
-    def get_job_responses(self, job_id: str, page: int = 1, per_page: int = 100) -> dict:
-        return self._request("GET", f"/jobs/{job_id}/responses", params={"page": page, "per_page": per_page})
+    def get_job_responses(
+        self,
+        job_id: str,
+        page: int = 1,
+        per_page: int = 100,
+        include_abandoned: bool = False,
+        include_in_progress: bool = False,
+    ) -> dict:
+        params: dict = {"page": page, "per_page": per_page}
+        if include_abandoned:
+            params["include_abandoned"] = True
+        if include_in_progress:
+            params["include_in_progress"] = True
+        return self._request("GET", f"/jobs/{job_id}/responses", params=params)
 
     def list_jobs(self) -> dict:
         return self._request("GET", "/jobs")
