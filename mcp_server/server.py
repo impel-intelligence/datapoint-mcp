@@ -699,6 +699,19 @@ def resume_survey(job_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _format_annotator_location(r: dict) -> str:
+    """Render the annotator's snapshotted geography as a short comma-joined string.
+
+    Returns an empty string when no geography fields are populated.
+    """
+    parts = [
+        r.get("annotator_city"),
+        r.get("annotator_region"),
+        r.get("annotator_country_name") or r.get("annotator_country"),
+    ]
+    return ", ".join(p for p in parts if p)
+
+
 def _format_response_row(r: dict) -> str:
     """Render one raw-response row as a single chat-display string."""
     annotator = (r.get("annotator_id") or "?")[:8]
@@ -706,7 +719,9 @@ def _format_response_row(r: dict) -> str:
     response_text = r.get("response")
     rt_ms = r.get("response_time_ms")
     rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
-    return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}"
+    location = _format_annotator_location(r)
+    loc_str = f" — {location}" if location else ""
+    return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}{loc_str}"
 
 
 def _pluralize(n: int, word: str) -> str:
