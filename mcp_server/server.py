@@ -722,13 +722,41 @@ def _format_responses_page(data: dict, job_id: str, page: int, per_page: int) ->
     if not responses:
         return f"No responses yet for job {job_id}."
 
-    is_chain = any(r.get("step_index") is not None for r in responses)
+    steps_meta = data.get("steps")
+    is_chain = bool(steps_meta) or any(r.get("step_index") is not None for r in responses)
 
     lines = [
         f"Raw responses — job {job_id}",
         f"Showing {len(responses)} of {total} total (page {page}, {per_page} per page)",
         "",
     ]
+
+    if steps_meta:
+        lines.append("Chain structure:")
+        for step in steps_meta:
+            task_type = step.get("task_type", "?")
+            instruction = step.get("instruction") or "(no instruction)"
+            step_idx = step.get("step_index", "?")
+            line = f"  Step {step_idx} [{task_type}] — {instruction}"
+            opts = step.get("response_options")
+            if opts:
+                line += f"  — options: {opts}"
+            lines.append(line)
+            skip_if = step.get("skip_if")
+            if skip_if:
+                lines.append(f"     ↳ skip_if: {_format_skip_if(skip_if)}")
+        lines.append("")
+    elif not is_chain:
+        instruction = data.get("instruction")
+        opts = data.get("response_options")
+        task_type = data.get("task_type")
+        if instruction:
+            label = f"Question [{task_type}]" if task_type else "Question"
+            lines.append(f"{label}: {instruction}")
+        if opts:
+            lines.append(f"Options: {opts}")
+        if instruction or opts:
+            lines.append("")
 
     if is_chain:
         by_dp_step: dict[int, dict[int, list[dict]]] = {}
