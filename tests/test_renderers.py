@@ -277,6 +277,54 @@ class FormatResponseRowTests(unittest.TestCase):
         out = _format_response_row({"response": "x", "annotator_id": "abcd"})
         self.assertNotIn("s)", out)
 
+    def test_renders_full_annotator_location(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "annotator_city": "Bangalore",
+            "annotator_region": "KA",
+            "annotator_country": "IN",
+            "annotator_country_name": "India",
+        }
+        out = _format_response_row(row)
+        self.assertIn("Bangalore, KA, India", out)
+
+    def test_renders_partial_location_skipping_blank_parts(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "annotator_city": None,
+            "annotator_region": None,
+            "annotator_country": "IN",
+            "annotator_country_name": "India",
+        }
+        out = _format_response_row(row)
+        self.assertIn("— India", out)
+        self.assertNotIn("None", out)
+
+    def test_falls_back_to_country_code_when_name_missing(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "annotator_country": "IN",
+            "annotator_country_name": None,
+        }
+        out = _format_response_row(row)
+        self.assertIn("— IN", out)
+
+    def test_omits_location_suffix_when_no_geography_fields(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "response_time_ms": 1000,
+        }
+        out = _format_response_row(row)
+        self.assertNotIn(" — ", out)
+
 
 class FormatResponsesPageStandaloneTests(unittest.TestCase):
     def test_groups_by_datapoint(self):
