@@ -69,6 +69,9 @@ class DatapointClient:
     def get_balance(self) -> dict:
         return self._request("GET", "/billing/balance")
 
+    def get_pricing(self) -> dict:
+        return self._request("GET", "/billing/pricing")
+
     def create_checkout(self, product_id: str | None = None) -> dict:
         body = {}
         if product_id:
