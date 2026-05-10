@@ -926,12 +926,23 @@ def check_balance() -> str:
     except DatapointAPIError as e:
         return f"Error: {e.detail}"
 
-    return (
-        f"Account balance:\n"
-        f"  Available: ${balance['available_usd']:.2f}\n"
-        f"  Reserved (in-flight surveys): ${balance['reserved_usd']:.2f}\n"
-        f"  Total purchased: ${balance['total_purchased_usd']:.2f}"
-    )
+    lines = [
+        "Account balance:",
+        f"  Available: ${balance['available_usd']:.2f}",
+        f"  Reserved (in-flight surveys): ${balance['reserved_usd']:.2f}",
+        f"  Total purchased: ${balance['total_purchased_usd']:.2f}",
+    ]
+
+    # Pricing is best-effort; older deployments without /billing/pricing simply omit the rate.
+    try:
+        pricing = client.get_pricing()
+    except DatapointAPIError:
+        pricing = None
+
+    if pricing is not None and pricing.get("per_response_usd") is not None:
+        lines.append(f"  Per-response rate: ${pricing['per_response_usd']:.4f}")
+
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

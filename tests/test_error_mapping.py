@@ -1,4 +1,5 @@
-"""Tests for the user-friendly error rendering in upload_media and create_survey.
+"""Tests for the user-friendly error rendering in upload_media and create_survey,
+and for the optional pricing line in check_balance.
 
 stdlib unittest only — patches the MCP server's lazy `_get_client` so the
 DatapointClient is replaced with a Mock that raises specific DatapointAPIErrors.
@@ -10,7 +11,12 @@ import unittest
 from unittest import mock
 
 from mcp_server.client import DatapointAPIError
-from mcp_server.server import _describe_upload_error, create_survey, upload_media
+from mcp_server.server import (
+    _describe_upload_error,
+    check_balance,
+    create_survey,
+    upload_media,
+)
 
 
 class DescribeUploadErrorTests(unittest.TestCase):
@@ -104,6 +110,63 @@ class CreateSurveyErrorTests(unittest.TestCase):
         self.assertIn("Insufficient balance", out)
         self.assertIn("$5.00", out)
         self.assertIn("$1.50", out)
+
+
+class CheckBalanceTests(unittest.TestCase):
+    def _balance_dict(self) -> dict:
+        return {"available_usd": 12.50, "reserved_usd": 1.25, "total_purchased_usd": 50.0}
+
+    def test_renders_per_response_rate_when_pricing_succeeds(self):
+        client = mock.Mock()
+        client.get_balance.return_value = self._balance_dict()
+        client.get_pricing.return_value = {"per_response_usd": 0.0500}
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = check_balance()
+        self.assertIn("Available: $12.50", out)
+        self.assertIn("Per-response rate: $0.0500", out)
+
+    def test_omits_rate_line_when_pricing_404s(self):
+        client = mock.Mock()
+        client.get_balance.return_value = self._balance_dict()
+        client.get_pricing.side_effect = DatapointAPIError(404, "Not Found")
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = check_balance()
+        self.assertIn("Available: $12.50", out)
+        self.assertNotIn("Per-response rate", out)
+
+    def test_omits_rate_line_when_pricing_response_missing_field(self):
+        client = mock.Mock()
+        client.get_balance.return_value = self._balance_dict()
+        client.get_pricing.return_value = {}
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = check_balance()
+        self.assertNotIn("Per-response rate", out)
+
+    def test_omits_rate_line_when_pricing_per_response_usd_null(self):
+        client = mock.Mock()
+        client.get_balance.return_value = self._balance_dict()
+        client.get_pricing.return_value = {"per_response_usd": None}
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = check_balance()
+        self.assertNotIn("Per-response rate", out)
+
+    def test_omits_rate_line_on_non_404_pricing_error(self):
+        client = mock.Mock()
+        client.get_balance.return_value = self._balance_dict()
+        client.get_pricing.side_effect = DatapointAPIError(500, "internal error")
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = check_balance()
+        self.assertIn("Available: $12.50", out)
+        self.assertNotIn("Per-response rate", out)
+        self.assertNotIn("internal error", out)
+
+    def test_balance_failure_still_short_circuits(self):
+        client = mock.Mock()
+        client.get_balance.side_effect = DatapointAPIError(401, "unauthorized")
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = check_balance()
+        self.assertIn("Error", out)
+        client.get_pricing.assert_not_called()
 
 
 if __name__ == "__main__":
