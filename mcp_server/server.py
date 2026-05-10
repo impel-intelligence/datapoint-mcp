@@ -1,7 +1,7 @@
 """Datapoint AI MCP Server.
 
 Provides tools for creating human evaluation surveys, checking results,
-and managing credits — all from within Claude Code conversations.
+and managing credits — all from inside any MCP-capable agent.
 """
 
 import atexit
@@ -145,22 +145,37 @@ def upload_media(file_paths: list[str]) -> str:
     """
     client = _get_client()
 
+    if not file_paths:
+        return "No files provided."
+
     uploaded = []
     errors = []
+    files_succeeded = 0
     for path in file_paths:
         try:
             result = client.upload_media(path)
             # Response shape: {"media": [{"filename","media_ref","type","size_bytes"}]}
-            for item in result.get("media", []):
-                uploaded.append(item)
+            uploaded.extend(result.get("media", []))
+            files_succeeded += 1
         except FileNotFoundError as e:
             errors.append(f"{path}: {e}")
         except DatapointAPIError as e:
             errors.append(f"{path}: {_describe_upload_error(e)}")
 
-    lines: list[str] = []
+    total = len(file_paths)
+    files_failed = len(errors)
+    if files_failed == 0:
+        summary = f"Uploaded {_pluralize(files_succeeded, 'file')}."
+    elif files_succeeded == 0:
+        summary = f"All {_pluralize(total, 'file')} failed to upload."
+    else:
+        summary = f"Uploaded {files_succeeded} of {total} files; {files_failed} failed."
+
+    lines: list[str] = [summary]
+
     if uploaded:
-        lines.append(f"Uploaded {len(uploaded)} file(s):")
+        lines.append("")
+        lines.append("Media references:")
         for item in uploaded:
             lines.append(
                 f"  {item.get('filename', '?')} → {item.get('media_ref', '?')} "
@@ -170,13 +185,12 @@ def upload_media(file_paths: list[str]) -> str:
         lines.append("Pass the media_ref values (dp://…) inside the plan_survey description.")
 
     if errors:
-        if lines:
-            lines.append("")
+        lines.append("")
         lines.append(f"Failed ({len(errors)}):")
         for err in errors:
             lines.append(f"  {err}")
 
-    return "\n".join(lines) if lines else "No files provided."
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +245,11 @@ def _render_filter_values(vals: list) -> str:
     return ", ".join(rendered)
 
 
+def _pluralize(n: int, word: str) -> str:
+    """English plural for `word` based on count `n` (no irregular forms)."""
+    return f"{n} {word}{'s' if n != 1 else ''}"
+
+
 def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
     """Render a standalone (non-chain) plan for user confirmation."""
     lines = [
@@ -259,7 +278,7 @@ def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnin
 
 def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
     """Render a chain plan so the user sees the full flow + skip conditions
-    before confirming. Claude should show this to the user verbatim.
+    before confirming. The agent should show this to the user verbatim.
 
     Chain plans are served atomically: an annotator who picks up the chain
     walks through every step in order, possibly terminated early by a step's
@@ -382,7 +401,7 @@ def plan_survey(description: str, max_responses: int = 10) -> str:
 
     except DatapointAPIError as e:
         # 422 carries a structured {"message", "warnings"} body from _validate_plan —
-        # surface the warnings so the user sees what the LLM got wrong.
+        # surface the warnings so the user sees what the planner got wrong.
         if e.status_code == 422 and isinstance(e.detail, dict):
             message = e.detail.get("message", "Plan failed validation")
             warnings = e.detail.get("warnings") or []
@@ -565,6 +584,12 @@ def _format_check_survey(status: dict, results_data: dict | None, results_error:
         f"Cost so far: ${status.get('cost_usd', 0):.2f}",
     ]
 
+    lines.extend(_format_audience_targeting(status))
+
+    response_options = status.get("response_options")
+    if response_options:
+        lines.append(f"Response options: {response_options}")
+
     errors = status.get("errors", [])
     if errors:
         lines.append(f"\nErrors ({len(errors)}):")
@@ -737,6 +762,38 @@ def resume_survey(job_id: str) -> str:
     return _run_lifecycle_action("resume", client.resume_job, job_id)
 
 
+@mcp.tool()
+def retry_failed_datapoints(job_id: str, datapoint_indices: list[int] | None = None) -> str:
+    """Re-queue failed datapoints on a survey.
+
+    Each retried datapoint reserves credit again, the same way the original
+    submission did — only call this when the failures are worth recovering.
+
+    Args:
+        job_id: The job ID returned by create_survey.
+        datapoint_indices: Specific failed indices to retry. Omit to retry
+            every failed datapoint in the survey.
+    """
+    client = _get_client()
+    try:
+        result = client.retry_job(job_id, datapoint_indices=datapoint_indices)
+    except DatapointAPIError as e:
+        if e.status_code == 400:
+            return f"Cannot retry: {e.detail}"
+        if e.status_code == 404:
+            return f"Survey not found: {job_id}"
+        return f"Error: {e.detail}"
+
+    retried = result.get("retried", 0)
+    indices = result.get("datapoint_indices", [])
+    if retried == 0:
+        return f"No failed datapoints to retry on survey {job_id}."
+    return (
+        f"Re-queued {_pluralize(retried, 'datapoint')} on survey {job_id}: "
+        f"{indices}. Use check_survey to monitor progress."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool: get_survey_responses
 # ---------------------------------------------------------------------------
@@ -783,11 +840,6 @@ def _format_response_row(r: dict) -> str:
     walk = _format_walk_outcome(r)
     walk_str = f" [{walk}]" if walk else ""
     return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}{loc_str}{walk_str}"
-
-
-def _pluralize(n: int, word: str) -> str:
-    """English plural for `word` based on count `n` (no irregular forms)."""
-    return f"{n} {word}{'s' if n != 1 else ''}"
 
 
 def _format_responses_page(
@@ -978,12 +1030,12 @@ def check_balance() -> str:
 def add_credits(product_id: str | None = None) -> str:
     """Open a checkout link to purchase Datapoint AI credits.
 
-    Returns a Polar.sh checkout URL. The user completes payment in their
-    browser; the credits land on their account once Polar's webhook fires.
+    Returns a hosted checkout URL. The user completes payment in their
+    browser; credits land on their account once payment confirms.
 
     Args:
-        product_id: Optional Polar product ID. Omit to use the default credit
-            bundle configured on the server.
+        product_id: Optional product identifier. Omit to use the default
+            credit bundle configured on the server.
     """
     client = _get_client()
 
