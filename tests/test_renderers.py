@@ -325,6 +325,90 @@ class FormatResponseRowTests(unittest.TestCase):
         out = _format_response_row(row)
         self.assertNotIn(" — ", out)
 
+    def test_walk_outcome_suppressed_for_trivial_happy_case(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "chain_outcome": "answered",
+            "session_outcome": "completed",
+        }
+        out = _format_response_row(row)
+        self.assertNotIn("walk:", out)
+        self.assertNotIn("[", out)
+
+    def test_walk_outcome_renders_skipped_by_rule(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "chain_outcome": "skipped_by_rule",
+            "session_outcome": "completed",
+        }
+        out = _format_response_row(row)
+        self.assertIn("[walk: skipped_by_rule]", out)
+
+    def test_walk_outcome_renders_abandoned_pair_without_repeating(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "chain_outcome": "abandoned",
+            "session_outcome": "abandoned",
+        }
+        out = _format_response_row(row)
+        self.assertIn("[walk: abandoned]", out)
+        self.assertNotIn("abandoned / abandoned", out)
+
+    def test_walk_outcome_renders_answered_in_progress(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "chain_outcome": "answered",
+            "session_outcome": "in_progress",
+        }
+        out = _format_response_row(row)
+        self.assertIn("[walk: answered / in_progress]", out)
+
+    def test_walk_outcome_omitted_for_non_chain_responses(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "A",
+            "chain_outcome": None,
+            "session_outcome": None,
+        }
+        out = _format_response_row(row)
+        self.assertNotIn("walk:", out)
+
+
+class FormatResponsesPageIncludeFlagTests(unittest.TestCase):
+    def _data(self) -> dict:
+        return {
+            "total_responses": 1,
+            "responses": [
+                {"datapoint_index": 0, "annotator_id": "a1", "timestamp": "t", "response": "A"}
+            ],
+        }
+
+    def test_default_render_has_no_include_notes(self):
+        out = _format_responses_page(self._data(), job_id="job_x", page=1, per_page=100)
+        self.assertNotIn("Including abandoned", out)
+        self.assertNotIn("Including in-flight", out)
+
+    def test_include_abandoned_emits_note(self):
+        out = _format_responses_page(
+            self._data(), job_id="job_x", page=1, per_page=100, include_abandoned=True
+        )
+        self.assertIn("Including abandoned walks.", out)
+
+    def test_include_in_progress_emits_note(self):
+        out = _format_responses_page(
+            self._data(), job_id="job_x", page=1, per_page=100, include_in_progress=True
+        )
+        self.assertIn("Including in-flight walks.", out)
+
 
 class FormatResponsesPageStandaloneTests(unittest.TestCase):
     def test_groups_by_datapoint(self):
