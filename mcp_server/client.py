@@ -107,6 +107,13 @@ class DatapointClient:
     def list_jobs(self) -> dict:
         return self._request("GET", "/jobs")
 
+    def retry_job(self, job_id: str, datapoint_indices: list[int] | None = None) -> dict:
+        """POST /jobs/{job_id}/retry — re-queue failed datapoints."""
+        body: dict = {}
+        if datapoint_indices is not None:
+            body["datapoint_indices"] = datapoint_indices
+        return self._request("POST", f"/jobs/{job_id}/retry", json=body)
+
     def pause_job(self, job_id: str) -> dict:
         """POST /jobs/{job_id}/pause — stops serving new tasks."""
         return self._request("POST", f"/jobs/{job_id}/pause")

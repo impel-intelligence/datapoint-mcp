@@ -145,22 +145,37 @@ def upload_media(file_paths: list[str]) -> str:
     """
     client = _get_client()
 
+    if not file_paths:
+        return "No files provided."
+
     uploaded = []
     errors = []
+    files_succeeded = 0
     for path in file_paths:
         try:
             result = client.upload_media(path)
             # Response shape: {"media": [{"filename","media_ref","type","size_bytes"}]}
-            for item in result.get("media", []):
-                uploaded.append(item)
+            uploaded.extend(result.get("media", []))
+            files_succeeded += 1
         except FileNotFoundError as e:
             errors.append(f"{path}: {e}")
         except DatapointAPIError as e:
             errors.append(f"{path}: {_describe_upload_error(e)}")
 
-    lines: list[str] = []
+    total = len(file_paths)
+    files_failed = len(errors)
+    if files_failed == 0:
+        summary = f"Uploaded {_pluralize(files_succeeded, 'file')}."
+    elif files_succeeded == 0:
+        summary = f"All {_pluralize(total, 'file')} failed to upload."
+    else:
+        summary = f"Uploaded {files_succeeded} of {total} files; {files_failed} failed."
+
+    lines: list[str] = [summary]
+
     if uploaded:
-        lines.append(f"Uploaded {len(uploaded)} file(s):")
+        lines.append("")
+        lines.append("Media references:")
         for item in uploaded:
             lines.append(
                 f"  {item.get('filename', '?')} → {item.get('media_ref', '?')} "
@@ -170,13 +185,12 @@ def upload_media(file_paths: list[str]) -> str:
         lines.append("Pass the media_ref values (dp://…) inside the plan_survey description.")
 
     if errors:
-        if lines:
-            lines.append("")
+        lines.append("")
         lines.append(f"Failed ({len(errors)}):")
         for err in errors:
             lines.append(f"  {err}")
 
-    return "\n".join(lines) if lines else "No files provided."
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +243,11 @@ def _render_filter_values(vals: list) -> str:
         else:
             rendered.append(str(v))
     return ", ".join(rendered)
+
+
+def _pluralize(n: int, word: str) -> str:
+    """English plural for `word` based on count `n` (no irregular forms)."""
+    return f"{n} {word}{'s' if n != 1 else ''}"
 
 
 def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
@@ -565,6 +584,12 @@ def _format_check_survey(status: dict, results_data: dict | None, results_error:
         f"Cost so far: ${status.get('cost_usd', 0):.2f}",
     ]
 
+    lines.extend(_format_audience_targeting(status))
+
+    response_options = status.get("response_options")
+    if response_options:
+        lines.append(f"Response options: {response_options}")
+
     errors = status.get("errors", [])
     if errors:
         lines.append(f"\nErrors ({len(errors)}):")
@@ -737,6 +762,38 @@ def resume_survey(job_id: str) -> str:
     return _run_lifecycle_action("resume", client.resume_job, job_id)
 
 
+@mcp.tool()
+def retry_failed_datapoints(job_id: str, datapoint_indices: list[int] | None = None) -> str:
+    """Re-queue failed datapoints on a survey.
+
+    Each retried datapoint reserves credit again, the same way the original
+    submission did — only call this when the failures are worth recovering.
+
+    Args:
+        job_id: The job ID returned by create_survey.
+        datapoint_indices: Specific failed indices to retry. Omit to retry
+            every failed datapoint in the survey.
+    """
+    client = _get_client()
+    try:
+        result = client.retry_job(job_id, datapoint_indices=datapoint_indices)
+    except DatapointAPIError as e:
+        if e.status_code == 400:
+            return f"Cannot retry: {e.detail}"
+        if e.status_code == 404:
+            return f"Survey not found: {job_id}"
+        return f"Error: {e.detail}"
+
+    retried = result.get("retried", 0)
+    indices = result.get("datapoint_indices", [])
+    if retried == 0:
+        return f"No failed datapoints to retry on survey {job_id}."
+    return (
+        f"Re-queued {_pluralize(retried, 'datapoint')} on survey {job_id}: "
+        f"{indices}. Use check_survey to monitor progress."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool: get_survey_responses
 # ---------------------------------------------------------------------------
@@ -783,11 +840,6 @@ def _format_response_row(r: dict) -> str:
     walk = _format_walk_outcome(r)
     walk_str = f" [{walk}]" if walk else ""
     return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}{loc_str}{walk_str}"
-
-
-def _pluralize(n: int, word: str) -> str:
-    """English plural for `word` based on count `n` (no irregular forms)."""
-    return f"{n} {word}{'s' if n != 1 else ''}"
 
 
 def _format_responses_page(
