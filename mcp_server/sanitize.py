@@ -1,7 +1,7 @@
 """Sanitize annotator-sourced text to prevent prompt injection.
 
 All text from annotator responses that flows back through MCP tools
-must be sanitized before being returned to Claude's context.
+must be sanitized before being returned to the agent's context.
 """
 
 import re

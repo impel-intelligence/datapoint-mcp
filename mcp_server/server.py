@@ -1,7 +1,7 @@
 """Datapoint AI MCP Server.
 
 Provides tools for creating human evaluation surveys, checking results,
-and managing credits — all from within Claude Code conversations.
+and managing credits — all from inside any MCP-capable agent.
 """
 
 import atexit
@@ -259,7 +259,7 @@ def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnin
 
 def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
     """Render a chain plan so the user sees the full flow + skip conditions
-    before confirming. Claude should show this to the user verbatim.
+    before confirming. The agent should show this to the user verbatim.
 
     Chain plans are served atomically: an annotator who picks up the chain
     walks through every step in order, possibly terminated early by a step's
@@ -382,7 +382,7 @@ def plan_survey(description: str, max_responses: int = 10) -> str:
 
     except DatapointAPIError as e:
         # 422 carries a structured {"message", "warnings"} body from _validate_plan —
-        # surface the warnings so the user sees what the LLM got wrong.
+        # surface the warnings so the user sees what the planner got wrong.
         if e.status_code == 422 and isinstance(e.detail, dict):
             message = e.detail.get("message", "Plan failed validation")
             warnings = e.detail.get("warnings") or []
@@ -978,12 +978,12 @@ def check_balance() -> str:
 def add_credits(product_id: str | None = None) -> str:
     """Open a checkout link to purchase Datapoint AI credits.
 
-    Returns a Polar.sh checkout URL. The user completes payment in their
-    browser; the credits land on their account once Polar's webhook fires.
+    Returns a hosted checkout URL. The user completes payment in their
+    browser; credits land on their account once payment confirms.
 
     Args:
-        product_id: Optional Polar product ID. Omit to use the default credit
-            bundle configured on the server.
+        product_id: Optional product identifier. Omit to use the default
+            credit bundle configured on the server.
     """
     client = _get_client()
 
