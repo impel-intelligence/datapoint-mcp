@@ -108,6 +108,16 @@ def setup() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _describe_upload_error(e: DatapointAPIError) -> str:
+    """Render a user-friendly message for a media upload error."""
+    if e.status_code == 413 and isinstance(e.detail, dict) and e.detail.get("code") == "media_too_large":
+        max_bytes = e.detail.get("max_bytes")
+        if max_bytes:
+            return f"file exceeds the upload cap ({max_bytes / 1_048_576:.0f} MB max)"
+        return "file exceeds the upload cap"
+    return str(e.detail)
+
+
 @mcp.tool()
 def upload_media(file_paths: list[str]) -> str:
     """Upload local media files (images, audio, video) and return dp:// references.
@@ -146,7 +156,7 @@ def upload_media(file_paths: list[str]) -> str:
         except FileNotFoundError as e:
             errors.append(f"{path}: {e}")
         except DatapointAPIError as e:
-            errors.append(f"{path}: {e.detail}")
+            errors.append(f"{path}: {_describe_upload_error(e)}")
 
     lines: list[str] = []
     if uploaded:
@@ -422,6 +432,15 @@ def create_survey(plan: dict) -> str:
                 f"Use add_credits to open a checkout link and top up, "
                 f"or check_balance to see your current balance."
             )
+        if e.status_code == 422 and isinstance(e.detail, dict) and e.detail.get("code") == "content_blocked":
+            reason = e.detail.get("reason") or "policy violation"
+            msg = f"Content review rejected this survey: {reason}"
+            field = e.detail.get("field")
+            if field:
+                msg += f" (in {field})"
+            return msg
+        if e.status_code == 503:
+            return f"Service temporarily unavailable: {e.detail}"
         return f"Error creating survey: {e.detail}"
 
     lines = [
