@@ -184,16 +184,40 @@ def upload_media(file_paths: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Mirrors common/data_layer/models.py:CLIENT_ANNOTATOR_FILTER_COLUMNS — the
+# geo-only subset external clients are allowed to filter and balance on in
+# production. Keys outside this set may not be honored on all deployments —
+# surfaced inline so users hand-editing a plan see the risk before submission.
+BROADLY_SUPPORTED_FILTER_KEYS = {
+    "country",
+    "country_name",
+    "region",
+    "city",
+    "postal",
+    "timezone",
+    "is_eu",
+}
+
+
 def _format_audience_targeting(plan: dict) -> list[str]:
     """Render annotator_filter / annotator_distribution as user-visible lines."""
     out: list[str] = []
     annotator_filter = plan.get("annotator_filter")
     if annotator_filter:
-        parts = [f"{col} in [{_render_filter_values(vals)}]" for col, vals in annotator_filter.items()]
+        parts = []
+        for col, vals in annotator_filter.items():
+            clause = f"{col} in [{_render_filter_values(vals)}]"
+            if col not in BROADLY_SUPPORTED_FILTER_KEYS:
+                clause += " (limited support)"
+            parts.append(clause)
         out.append(f"Targeting: {'; '.join(parts)}")
     distribution = plan.get("annotator_distribution")
     if distribution:
-        out.append(f"Balanced by: {', '.join(distribution)}")
+        annotated = [
+            col if col in BROADLY_SUPPORTED_FILTER_KEYS else f"{col} (limited support)"
+            for col in distribution
+        ]
+        out.append(f"Balanced by: {', '.join(annotated)}")
     return out
 
 
