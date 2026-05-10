@@ -164,11 +164,41 @@ class AudienceTargetingFormatterTests(unittest.TestCase):
         self.assertIn("Targeting:", out[0])
         self.assertIn("Balanced by:", out[1])
 
-    def test_unknown_column_passes_through_without_validation(self):
-        """Renderer must stay generic — the planner enforces the column allow-list,
-        not the MCP. Adding columns server-side should not need a client release."""
-        out = _format_audience_targeting({"annotator_filter": {"future_column_xyz": ["v"]}})
-        self.assertEqual(out, ["Targeting: future_column_xyz in [v]"])
+    def test_unknown_filter_column_marked_limited_support(self):
+        """Columns outside the broadly-supported set get an inline hint so users
+        hand-editing a plan see the risk before submission."""
+        out = _format_audience_targeting({"annotator_filter": {"asn_type": ["isp"]}})
+        self.assertEqual(out, ["Targeting: asn_type in [isp] (limited support)"])
+
+    def test_privacy_columns_marked_limited_support(self):
+        """privacy_* columns are reserved for server-side policy on production
+        deployments and must surface the hint."""
+        out = _format_audience_targeting({"annotator_filter": {"privacy_tor": [True]}})
+        self.assertIn("(limited support)", out[0])
+
+    def test_supported_filter_columns_have_no_annotation(self):
+        out = _format_audience_targeting(
+            {"annotator_filter": {"country": ["US"], "is_eu": [True]}}
+        )
+        self.assertNotIn("(limited support)", out[0])
+
+    def test_mixed_supported_and_unsupported_filter_columns(self):
+        out = _format_audience_targeting(
+            {"annotator_filter": {"country": ["US"], "asn_type": ["isp"]}}
+        )
+        self.assertIn("country in [US]", out[0])
+        self.assertIn("asn_type in [isp] (limited support)", out[0])
+        self.assertNotIn("country in [US] (limited support)", out[0])
+
+    def test_distribution_marks_unsupported_columns_only(self):
+        out = _format_audience_targeting(
+            {"annotator_distribution": ["country", "asn"]}
+        )
+        self.assertEqual(out, ["Balanced by: country, asn (limited support)"])
+
+    def test_supported_distribution_columns_have_no_annotation(self):
+        out = _format_audience_targeting({"annotator_distribution": ["country", "is_eu"]})
+        self.assertEqual(out, ["Balanced by: country, is_eu"])
 
 
 class StandalonePlanWithTargetingTests(unittest.TestCase):
