@@ -157,9 +157,9 @@ Some surveys have dependent questions — the second only makes sense given a sp
 
 > "Ask 20 listeners if they could understand the speaker in this clip. If yes, rate the audio quality 1–5. If not, skip the rating."
 
-A chain ties 2–5 steps together into a single unit of annotator work: every step is served to the same annotator, in order, and a per-step `skip_if` rule can terminate the walk early. Claude will show you the full chain structure (steps, any skip conditions, cost) and wait for your confirmation before calling `create_survey`.
+A chain ties 2–5 steps together into a single unit of annotator work: every step is served to the same annotator, in order, and a per-step `skip_if` rule can end the response early. Claude will show you the full chain structure (steps, any skip conditions, cost) and wait for your confirmation before calling `create_survey`.
 
-The cost shown in `plan_survey` is the upper bound (every walk completes every step); when `skip_if` rules fire, walks cost proportionally less.
+The cost shown in `plan_survey` is the upper bound (every response answers every step); when `skip_if` rules fire, responses cost proportionally less.
 
 ## Configuration
 

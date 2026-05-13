@@ -281,10 +281,10 @@ def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: l
     before confirming. The agent should show this to the user verbatim.
 
     Chain plans are served atomically: an annotator who picks up the chain
-    walks through every step in order, possibly terminated early by a step's
+    answers every step in order, possibly ended early by a step's
     ``skip_if`` predicate. Billing counts every submission-bearing answer, so
-    partial walks still cost money even though they don't count toward
-    consensus.
+    partial responses still cost money for the steps that were answered,
+    even though they don't count toward consensus.
     """
     steps = plan.get("steps", [])
     datapoints = plan.get("datapoints", [])
@@ -295,8 +295,8 @@ def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: l
         "",
         f"Summary: {summary}",
         f"Chain length: {len(steps)} step(s) in order",
-        f"Datapoints: {len(datapoints)} (each walked by up to {max_resp} annotators)",
-        f"Estimated cost: ${cost:.2f} (upper bound — partial walks cost less)",
+        f"Datapoints: {len(datapoints)} (each answered by up to {max_resp} annotators)",
+        f"Estimated cost: ${cost:.2f} (upper bound — responses ended early via skip_if cost less)",
     ]
     lines.extend(_format_audience_targeting(plan))
     lines.append("")
@@ -322,7 +322,7 @@ def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: l
     lines.append("")
     lines.append(
         f"⚠ Creating this chain survey will reserve up to ${cost:.2f} (the upper bound — "
-        "walks ended early by a step's `skip_if` rule cost proportionally less)."
+        "responses ended early by a step's `skip_if` rule cost proportionally less)."
     )
     lines.append(
         "Show the chain structure and any `skip_if` conditions above to the user and WAIT "
@@ -431,7 +431,7 @@ def create_survey(plan: dict) -> str:
     Supports both standalone plans and chain plans (with a top-level `steps`
     array alongside `datapoints`). For chain plans, the backend dispatches
     each step of each datapoint as a linked task; the full sequence is
-    served together, in order, to one annotator per walk.
+    served together, in order, to one annotator per response.
 
     MEDIA VALIDATION: every media entry must use either:
       - a dp://media/… reference returned by `upload_media`, or
@@ -556,9 +556,9 @@ def _format_check_survey(status: dict, results_data: dict | None, results_error:
     """
     chain_progress = status.get("chain_progress")
     if chain_progress is not None:
-        got = chain_progress["completed_walks"]
-        total = chain_progress["target_walks"]
-        unit = "chain walks"
+        got = chain_progress["completed_responses"]
+        total = chain_progress["target_responses"]
+        unit = "chain responses"
     else:
         got = status.get("total_responses", 0)
         total = status.get("total_datapoints", 0) * status.get("max_responses_per_datapoint", 0)
@@ -812,8 +812,8 @@ def _format_annotator_location(r: dict) -> str:
     return ", ".join(p for p in parts if p)
 
 
-def _format_walk_outcome(r: dict) -> str:
-    """Render chain-walk outcome for atypical paths; empty for non-chain or the trivial happy case."""
+def _format_chain_outcome(r: dict) -> str:
+    """Render chain outcome for atypical paths; empty for non-chain or the trivial happy case."""
     chain = r.get("chain_outcome")
     session = r.get("session_outcome")
     if not chain and not session:
@@ -825,7 +825,7 @@ def _format_walk_outcome(r: dict) -> str:
         parts.append(chain)
     if session and session != "completed" and session != chain:
         parts.append(session)
-    return f"walk: {' / '.join(parts)}" if parts else ""
+    return f"chain: {' / '.join(parts)}" if parts else ""
 
 
 def _format_response_row(r: dict) -> str:
@@ -837,9 +837,9 @@ def _format_response_row(r: dict) -> str:
     rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
     location = _format_annotator_location(r)
     loc_str = f" — {location}" if location else ""
-    walk = _format_walk_outcome(r)
-    walk_str = f" [{walk}]" if walk else ""
-    return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}{loc_str}{walk_str}"
+    chain_outcome = _format_chain_outcome(r)
+    outcome_str = f" [{chain_outcome}]" if chain_outcome else ""
+    return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}{loc_str}{outcome_str}"
 
 
 def _format_responses_page(
@@ -865,9 +865,9 @@ def _format_responses_page(
         f"Showing {len(responses)} of {total} total (page {page}, {per_page} per page)",
     ]
     if include_abandoned:
-        lines.append("Including abandoned walks.")
+        lines.append("Including answers from abandoned chains.")
     if include_in_progress:
-        lines.append("Including in-flight walks.")
+        lines.append("Including answers from in-flight chains.")
     lines.append("")
 
     if steps_meta:
@@ -952,7 +952,7 @@ def get_survey_responses(
     annotator — useful for spotting outliers, seeing the spread of opinion, or
     understanding disagreement.
 
-    The default view excludes answered rows from chain walks the annotator
+    The default view excludes answered rows from chains the annotator
     abandoned mid-flow or that are still in progress, matching what counts
     toward your survey's response total. Set the include flags to surface them.
 
@@ -960,8 +960,8 @@ def get_survey_responses(
         job_id: The job ID returned by create_survey.
         page: Page number (default 1).
         per_page: Responses per page (default 100, max 200).
-        include_abandoned: Include answered rows from abandoned chain walks.
-        include_in_progress: Include answered rows from in-flight chain walks.
+        include_abandoned: Include answered rows from abandoned chains.
+        include_in_progress: Include answered rows from in-flight chains.
     """
     client = _get_client()
 

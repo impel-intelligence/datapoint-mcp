@@ -67,8 +67,8 @@ class ChainFormatterTests(unittest.TestCase):
         out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "Chain summary", 0.48, []))
         self.assertIn("Chain Survey Plan Ready", out)
         self.assertIn("Chain length: 2 step(s) in order", out)
-        self.assertIn("Datapoints: 2 (each walked by up to 8 annotators)", out)
-        self.assertIn("Estimated cost: $0.48 (upper bound — partial walks cost less)", out)
+        self.assertIn("Datapoints: 2 (each answered by up to 8 annotators)", out)
+        self.assertIn("Estimated cost: $0.48 (upper bound — responses ended early via skip_if cost less)", out)
 
     def test_chain_structure_renders_steps_in_list_order(self):
         out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 0.1, []))

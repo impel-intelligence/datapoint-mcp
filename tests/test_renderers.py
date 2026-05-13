@@ -211,13 +211,13 @@ class FormatCheckSurveyChainProgressTests(unittest.TestCase):
             total_datapoints=2,
             max_responses_per_datapoint=200,
             total_responses=10,
-            chain_progress={"completed_walks": 5, "target_walks": 200},
+            chain_progress={"completed_responses": 5, "target_responses": 200},
             **overrides,
         )
 
-    def test_chain_progress_renders_walks_not_responses(self):
+    def test_chain_progress_uses_chain_responses_unit(self):
         out = _format_check_survey(self._chain_status(), None)
-        self.assertIn("5/200 chain walks (2%)", out)
+        self.assertIn("5/200 chain responses (2%)", out)
         self.assertNotIn("10/400", out)
 
     def test_missing_chain_progress_falls_back_to_responses(self):
@@ -325,7 +325,7 @@ class FormatResponseRowTests(unittest.TestCase):
         out = _format_response_row(row)
         self.assertNotIn(" — ", out)
 
-    def test_walk_outcome_suppressed_for_trivial_happy_case(self):
+    def test_chain_outcome_suppressed_for_trivial_happy_case(self):
         row = {
             "annotator_id": "anon_x",
             "timestamp": "t",
@@ -334,10 +334,10 @@ class FormatResponseRowTests(unittest.TestCase):
             "session_outcome": "completed",
         }
         out = _format_response_row(row)
-        self.assertNotIn("walk:", out)
+        self.assertNotIn("chain:", out)
         self.assertNotIn("[", out)
 
-    def test_walk_outcome_renders_skipped_by_rule(self):
+    def test_chain_outcome_renders_skipped_by_rule(self):
         row = {
             "annotator_id": "anon_x",
             "timestamp": "t",
@@ -346,9 +346,9 @@ class FormatResponseRowTests(unittest.TestCase):
             "session_outcome": "completed",
         }
         out = _format_response_row(row)
-        self.assertIn("[walk: skipped_by_rule]", out)
+        self.assertIn("[chain: skipped_by_rule]", out)
 
-    def test_walk_outcome_renders_abandoned_pair_without_repeating(self):
+    def test_chain_outcome_renders_abandoned_pair_without_repeating(self):
         row = {
             "annotator_id": "anon_x",
             "timestamp": "t",
@@ -357,10 +357,10 @@ class FormatResponseRowTests(unittest.TestCase):
             "session_outcome": "abandoned",
         }
         out = _format_response_row(row)
-        self.assertIn("[walk: abandoned]", out)
+        self.assertIn("[chain: abandoned]", out)
         self.assertNotIn("abandoned / abandoned", out)
 
-    def test_walk_outcome_renders_answered_in_progress(self):
+    def test_chain_outcome_renders_answered_in_progress(self):
         row = {
             "annotator_id": "anon_x",
             "timestamp": "t",
@@ -369,9 +369,9 @@ class FormatResponseRowTests(unittest.TestCase):
             "session_outcome": "in_progress",
         }
         out = _format_response_row(row)
-        self.assertIn("[walk: answered / in_progress]", out)
+        self.assertIn("[chain: answered / in_progress]", out)
 
-    def test_walk_outcome_omitted_for_non_chain_responses(self):
+    def test_chain_outcome_omitted_for_non_chain_responses(self):
         row = {
             "annotator_id": "anon_x",
             "timestamp": "t",
@@ -380,7 +380,7 @@ class FormatResponseRowTests(unittest.TestCase):
             "session_outcome": None,
         }
         out = _format_response_row(row)
-        self.assertNotIn("walk:", out)
+        self.assertNotIn("chain:", out)
 
 
 class FormatResponsesPageIncludeFlagTests(unittest.TestCase):
@@ -401,13 +401,13 @@ class FormatResponsesPageIncludeFlagTests(unittest.TestCase):
         out = _format_responses_page(
             self._data(), job_id="job_x", page=1, per_page=100, include_abandoned=True
         )
-        self.assertIn("Including abandoned walks.", out)
+        self.assertIn("Including answers from abandoned chains.", out)
 
     def test_include_in_progress_emits_note(self):
         out = _format_responses_page(
             self._data(), job_id="job_x", page=1, per_page=100, include_in_progress=True
         )
-        self.assertIn("Including in-flight walks.", out)
+        self.assertIn("Including answers from in-flight chains.", out)
 
 
 class FormatResponsesPageStandaloneTests(unittest.TestCase):
