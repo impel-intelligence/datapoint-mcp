@@ -13,6 +13,7 @@ from unittest import mock
 from mcp_server.client import DatapointAPIError
 from mcp_server.server import (
     _describe_upload_error,
+    cancel_survey,
     check_balance,
     check_survey,
     create_survey,
@@ -152,6 +153,48 @@ class RetryFailedDatapointsTests(unittest.TestCase):
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = retry_failed_datapoints("job_x")
         self.assertIn("Cannot retry: Job is not in a retriable state", out)
+
+
+class CancelSurveyTests(unittest.TestCase):
+    def test_cancel_success_renders_settled_cost(self):
+        client = mock.Mock()
+        client.cancel_job.return_value = {
+            "job_id": "job_x",
+            "status": "cancelled",
+            "is_paused": True,
+            "cost_usd": 2.50,
+        }
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = cancel_survey("job_x")
+        client.cancel_job.assert_called_once_with("job_x")
+        self.assertIn("Cancelled survey job_x", out)
+        self.assertIn("Status: cancelled", out)
+        self.assertIn("is_paused: true", out)
+        self.assertIn("Settled cost: $2.50.", out)
+
+    def test_cancel_404_renders_not_found(self):
+        client = mock.Mock()
+        client.cancel_job.side_effect = DatapointAPIError(404, "Job not found")
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = cancel_survey("job_x")
+        self.assertEqual(out, "Survey not found: job_x")
+
+    def test_cancel_400_already_terminal_surfaces_backend_reason(self):
+        client = mock.Mock()
+        client.cancel_job.side_effect = DatapointAPIError(
+            400, "Cannot cancel a job with status 'completed'."
+        )
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = cancel_survey("job_x")
+        self.assertIn("Cannot cancel:", out)
+        self.assertIn("status 'completed'", out)
+
+    def test_cancel_500_surfaces_detail(self):
+        client = mock.Mock()
+        client.cancel_job.side_effect = DatapointAPIError(500, "internal error")
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = cancel_survey("job_x")
+        self.assertIn("Error: internal error", out)
 
 
 class CheckSurveyAudienceTargetingTests(unittest.TestCase):

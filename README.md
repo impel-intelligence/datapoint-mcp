@@ -36,6 +36,7 @@ LLMs are great at generating options and bad at telling you which one a real per
 | `list_surveys` | List all your surveys |
 | `pause_survey` | Pause task serving for an active survey (in-flight responses keep arriving) |
 | `resume_survey` | Resume task serving for a paused survey |
+| `cancel_survey` | Permanently cancel a survey and refund unused reserved credits (irreversible) |
 | `check_balance` | Check your account balance |
 | `add_credits` | Open a checkout link to top up your account |
 

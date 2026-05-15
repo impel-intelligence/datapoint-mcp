@@ -586,6 +586,27 @@ class FormatLifecycleResponseTests(unittest.TestCase):
         out = _format_lifecycle_response("Resumed", {"job_id": "job_y", "status": "active", "is_paused": False})
         self.assertEqual(out, "Resumed survey job_y. Status: active, is_paused: false.")
 
+    def test_cancelled_response_includes_settled_cost(self):
+        out = _format_lifecycle_response(
+            "Cancelled",
+            {"job_id": "job_z", "status": "cancelled", "is_paused": True, "cost_usd": 1.23},
+        )
+        self.assertEqual(
+            out,
+            "Cancelled survey job_z. Status: cancelled, is_paused: true. Settled cost: $1.23.",
+        )
+
+    def test_cancelled_response_with_zero_cost(self):
+        out = _format_lifecycle_response(
+            "Cancelled",
+            {"job_id": "job_z", "status": "cancelled", "is_paused": True, "cost_usd": 0.0},
+        )
+        self.assertIn("Settled cost: $0.00.", out)
+
+    def test_pause_response_omits_cost_when_absent(self):
+        out = _format_lifecycle_response("Paused", {"job_id": "job_x", "status": "active", "is_paused": True})
+        self.assertNotIn("Settled cost", out)
+
 
 class FormatListSurveysTests(unittest.TestCase):
     def test_empty_list_message(self):
