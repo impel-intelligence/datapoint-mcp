@@ -122,6 +122,10 @@ class DatapointClient:
         """POST /jobs/{job_id}/resume — resumes task serving."""
         return self._request("POST", f"/jobs/{job_id}/resume")
 
+    def cancel_job(self, job_id: str) -> dict:
+        """POST /jobs/{job_id}/cancel — irreversibly cancel and settle reserved credits."""
+        return self._request("POST", f"/jobs/{job_id}/cancel")
+
     def plan_survey(self, description: str, preferences: dict | None = None) -> dict:
         body: dict = {"description": description}
         if preferences:

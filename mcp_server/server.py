@@ -711,14 +711,22 @@ def list_surveys() -> str:
 
 
 def _format_lifecycle_response(verb: str, response: dict) -> str:
-    """Render the response from a pause/resume call."""
+    """Render the response from a pause/resume/cancel call.
+
+    ``cost_usd`` is rendered when the backend includes it (cancel returns the
+    settled cost; pause/resume don't).
+    """
     job_id = response.get("job_id", "?")
     status = response.get("status", "?")
     is_paused = response.get("is_paused", False)
-    return f"{verb} survey {job_id}. Status: {status}, is_paused: {str(is_paused).lower()}."
+    line = f"{verb} survey {job_id}. Status: {status}, is_paused: {str(is_paused).lower()}."
+    cost = response.get("cost_usd")
+    if cost is not None:
+        line += f" Settled cost: ${cost:.2f}."
+    return line
 
 
-_LIFECYCLE_PAST = {"pause": "Paused", "resume": "Resumed"}
+_LIFECYCLE_PAST = {"pause": "Paused", "resume": "Resumed", "cancel": "Cancelled"}
 
 
 def _run_lifecycle_action(verb: str, client_method, job_id: str) -> str:
@@ -760,6 +768,29 @@ def resume_survey(job_id: str) -> str:
     """
     client = _get_client()
     return _run_lifecycle_action("resume", client.resume_job, job_id)
+
+
+@mcp.tool()
+def cancel_survey(job_id: str) -> str:
+    """Permanently cancel a survey and settle its reserved credits.
+
+    ⚠ Cancellation is irreversible. Once cancelled, the survey stops serving
+    new tasks, any in-flight responses still complete, and all unused
+    reserved credits are returned to the balance. Already-consumed credit
+    (for responses already collected) is NOT refunded — the response is shown
+    in the result so the user knows the final cost.
+
+    Before calling, show the user the survey id and confirm they want to
+    cancel. Prefer `pause_survey` when the user just wants to stop temporarily.
+
+    Backend rejects with 400 if the survey is already in a terminal state
+    (completed, failed, or cancelled) — the message will say which.
+
+    Args:
+        job_id: The job ID returned by create_survey.
+    """
+    client = _get_client()
+    return _run_lifecycle_action("cancel", client.cancel_job, job_id)
 
 
 @mcp.tool()

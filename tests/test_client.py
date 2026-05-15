@@ -52,5 +52,20 @@ class GetJobResponsesParamsTests(unittest.TestCase):
         self.assertTrue(params.get("include_in_progress"))
 
 
+class CancelJobTests(unittest.TestCase):
+    def test_cancel_job_posts_to_cancel_path(self):
+        client = _make_client()
+        with mock.patch.object(client, "_request", return_value={}) as req:
+            client.cancel_job("job_x")
+        req.assert_called_once_with("POST", "/jobs/job_x/cancel")
+
+    def test_cancel_job_returns_request_payload(self):
+        client = _make_client()
+        payload = {"job_id": "job_x", "status": "cancelled", "is_paused": True, "cost_usd": 1.23}
+        with mock.patch.object(client, "_request", return_value=payload):
+            result = client.cancel_job("job_x")
+        self.assertEqual(result, payload)
+
+
 if __name__ == "__main__":
     unittest.main()
