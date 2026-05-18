@@ -61,7 +61,7 @@ class CancelJobTests(unittest.TestCase):
 
     def test_cancel_job_returns_request_payload(self):
         client = _make_client()
-        payload = {"job_id": "job_x", "status": "cancelled", "is_paused": True, "cost_usd": 1.23}
+        payload = {"job_id": "job_x", "status": "cancelled", "is_paused": True, "cost_credits": 123}
         with mock.patch.object(client, "_request", return_value=payload):
             result = client.cancel_job("job_x")
         self.assertEqual(result, payload)

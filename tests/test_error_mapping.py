@@ -162,7 +162,7 @@ class CancelSurveyTests(unittest.TestCase):
             "job_id": "job_x",
             "status": "cancelled",
             "is_paused": True,
-            "cost_usd": 2.50,
+            "cost_credits": 250,
         }
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = cancel_survey("job_x")
@@ -170,7 +170,7 @@ class CancelSurveyTests(unittest.TestCase):
         self.assertIn("Cancelled survey job_x", out)
         self.assertIn("Status: cancelled", out)
         self.assertIn("is_paused: true", out)
-        self.assertIn("Settled cost: $2.50.", out)
+        self.assertIn("Settled cost: 250 credits.", out)
 
     def test_cancel_404_renders_not_found(self):
         client = mock.Mock()
@@ -211,7 +211,7 @@ class CheckSurveyAudienceTargetingTests(unittest.TestCase):
             "failed_datapoints": 0,
             "total_responses": 10,
             "max_responses_per_datapoint": 2,
-            "cost_usd": 0.50,
+            "cost_credits": 50,
             "errors": [],
             "is_paused": False,
         }
@@ -309,28 +309,28 @@ class CreateSurveyErrorTests(unittest.TestCase):
         self.assertIn("Service temporarily unavailable", out)
         self.assertIn("retry with a new name", out)
 
-    def test_402_insufficient_balance_unchanged(self):
-        err = DatapointAPIError(402, {"needed_usd": 5.0, "available_usd": 1.5})
+    def test_402_insufficient_balance_renders_credit_amounts(self):
+        err = DatapointAPIError(402, {"needed_credits": 500, "available_credits": 150})
         client = self._client_raising(err)
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = create_survey({"datapoints": [], "task_type": "comparison"})
         self.assertIn("Insufficient balance", out)
-        self.assertIn("$5.00", out)
-        self.assertIn("$1.50", out)
+        self.assertIn("Need 500 credits", out)
+        self.assertIn("have 150 credits", out)
 
 
 class CheckBalanceTests(unittest.TestCase):
     def _balance_dict(self) -> dict:
-        return {"available_usd": 12.50, "reserved_usd": 1.25, "total_purchased_usd": 50.0}
+        return {"available_credits": 1250, "reserved_credits": 125, "total_purchased_credits": 5000}
 
     def test_renders_per_response_rate_when_pricing_succeeds(self):
         client = mock.Mock()
         client.get_balance.return_value = self._balance_dict()
-        client.get_pricing.return_value = {"per_response_usd": 0.0500}
+        client.get_pricing.return_value = {"credits_per_response": 5}
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = check_balance()
-        self.assertIn("Available: $12.50", out)
-        self.assertIn("Per-response rate: $0.0500", out)
+        self.assertIn("Available: 1250 credits", out)
+        self.assertIn("Per-response rate: 5 credits", out)
 
     def test_omits_rate_line_when_pricing_404s(self):
         client = mock.Mock()
@@ -338,7 +338,7 @@ class CheckBalanceTests(unittest.TestCase):
         client.get_pricing.side_effect = DatapointAPIError(404, "Not Found")
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = check_balance()
-        self.assertIn("Available: $12.50", out)
+        self.assertIn("Available: 1250 credits", out)
         self.assertNotIn("Per-response rate", out)
 
     def test_omits_rate_line_when_pricing_response_missing_field(self):
@@ -349,10 +349,10 @@ class CheckBalanceTests(unittest.TestCase):
             out = check_balance()
         self.assertNotIn("Per-response rate", out)
 
-    def test_omits_rate_line_when_pricing_per_response_usd_null(self):
+    def test_omits_rate_line_when_pricing_credits_per_response_null(self):
         client = mock.Mock()
         client.get_balance.return_value = self._balance_dict()
-        client.get_pricing.return_value = {"per_response_usd": None}
+        client.get_pricing.return_value = {"credits_per_response": None}
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = check_balance()
         self.assertNotIn("Per-response rate", out)
@@ -363,7 +363,7 @@ class CheckBalanceTests(unittest.TestCase):
         client.get_pricing.side_effect = DatapointAPIError(500, "internal error")
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = check_balance()
-        self.assertIn("Available: $12.50", out)
+        self.assertIn("Available: 1250 credits", out)
         self.assertNotIn("Per-response rate", out)
         self.assertNotIn("internal error", out)
 
