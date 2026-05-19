@@ -78,6 +78,12 @@ class DatapointClient:
             body["product_id"] = product_id
         return self._request("POST", "/billing/checkout", json=body)
 
+    def get_subscription(self) -> dict | None:
+        return self._request("GET", "/billing/subscription")
+
+    def create_portal_session(self) -> dict:
+        return self._request("POST", "/billing/portal", json={})
+
     # ----- Jobs / Surveys -----
 
     def create_job(self, payload: dict) -> dict:
