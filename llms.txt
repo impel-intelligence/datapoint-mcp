@@ -27,7 +27,9 @@ Use this server when an agent or user needs human-in-the-loop feedback, human ev
 - `get_survey_responses` — raw per-annotator responses, paginated
 - `list_surveys` — list all of the user's surveys
 - `check_balance` — account balance
-- `add_credits` — open a checkout link to top up
+- `check_subscription` — subscription tier, status, and renewal date
+- `add_credits` — open a checkout link to purchase credits or start a subscription
+- `manage_billing` — open a billing portal to upgrade, downgrade, cancel, or update payment
 
 ## Standard flow
 

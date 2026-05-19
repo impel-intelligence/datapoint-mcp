@@ -1059,27 +1059,135 @@ def check_balance() -> str:
 
 @mcp.tool()
 def add_credits(product_id: str | None = None) -> str:
-    """Open a checkout link to purchase Datapoint AI credits.
+    """Open a checkout link to purchase Datapoint AI credits or start a subscription.
 
-    Returns a hosted checkout URL. The user completes payment in their
-    browser; credits land on their account once payment confirms.
+    Returns a hosted checkout URL. The user completes payment in their browser;
+    credits or subscription benefits land on their account once payment confirms.
+
+    Omit ``product_id`` to see the right options for the account: subscription
+    tiers for first-time users, credit-pack add-ons for existing subscribers.
+    Pass a specific ``product_id`` to check out a single product. Credit packs
+    require an active subscription.
 
     Args:
-        product_id: Optional product identifier. Omit to use the default
-            credit bundle configured on the server.
+        product_id: Optional product identifier. Omit for the default checkout
+            page (tier picker for new users, credit-pack picker for subscribers).
     """
     client = _get_client()
 
     try:
         result = client.create_checkout(product_id=product_id)
     except DatapointAPIError as e:
+        if e.status_code == 403 and isinstance(e.detail, dict) and e.detail.get("code") == "subscription_required":
+            message = e.detail.get("message", "Credit pack purchases require an active subscription.")
+            tiers = e.detail.get("eligible_tiers") or []
+            parts = [message]
+            if tiers:
+                parts.append(f"Available tiers: {', '.join(t.capitalize() for t in tiers)}.")
+            parts.append("Call add_credits without a product_id to start a subscription, then try again.")
+            return "\n\n".join(parts)
         return f"Error creating checkout: {e.detail}"
 
     return (
-        "To add credits, open this checkout URL in your browser:\n\n"
+        "To complete your purchase, open this checkout URL in your browser:\n\n"
         f"  {result['checkout_url']}\n\n"
-        "Credits will appear on your account once payment completes. "
-        "Use check_balance to confirm."
+        "Once payment completes, use check_balance or check_subscription to confirm."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool: check_subscription
+# ---------------------------------------------------------------------------
+
+
+_SUBSCRIPTION_STATUS_LABELS = {
+    "active": "Active",
+    "past_due": "Payment past due",
+    "incomplete": "Payment pending",
+}
+
+
+def _humanize_subscription_status(status: str, cancel_at_period_end: bool) -> str:
+    """Translate backend subscription status into a short user-facing label."""
+    if cancel_at_period_end or status == "canceled_pending":
+        return "Canceling at end of period"
+    return _SUBSCRIPTION_STATUS_LABELS.get(status, status.replace("_", " ").capitalize())
+
+
+def _format_subscription(sub: dict) -> str:
+    """Render a /billing/subscription response for chat — minimal, no internal mechanics."""
+    tier = (sub.get("tier") or "?").capitalize()
+    cancel_at_period_end = bool(sub.get("cancel_at_period_end"))
+    is_canceling = cancel_at_period_end or sub.get("status") == "canceled_pending"
+    status_label = _humanize_subscription_status(sub.get("status") or "", cancel_at_period_end)
+    monthly_credits = sub.get("monthly_credits", 0)
+    period_end = sub.get("current_period_end")
+
+    lines = [
+        f"Active subscription: {tier}",
+        f"  Status: {status_label}",
+        f"  Monthly credits: {monthly_credits}",
+    ]
+    if period_end:
+        date_only = period_end[:10] if isinstance(period_end, str) else str(period_end)
+        label = "Active until" if is_canceling else "Renews"
+        lines.append(f"  {label}: {date_only}")
+    lines.append("")
+    lines.append("Use manage_billing to upgrade, downgrade, or cancel.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def check_subscription() -> str:
+    """Show your current Datapoint AI subscription tier and renewal date.
+
+    Returns "no active subscription" if the account has never subscribed,
+    has fully canceled, or is between billing periods.
+    """
+    client = _get_client()
+    try:
+        sub = client.get_subscription()
+    except DatapointAPIError as e:
+        return f"Error: {e.detail}"
+
+    if sub is None:
+        return (
+            "No active subscription.\n\n"
+            "Use add_credits to view available tiers and start a subscription."
+        )
+
+    return _format_subscription(sub)
+
+
+# ---------------------------------------------------------------------------
+# Tool: manage_billing
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def manage_billing() -> str:
+    """Open a billing portal to upgrade, downgrade, cancel, or update payment.
+
+    Returns a hosted portal URL where you can change tier, update payment
+    methods, or cancel your subscription. New purchases aren't available
+    here — use ``add_credits`` for those.
+    """
+    client = _get_client()
+    try:
+        result = client.create_portal_session()
+    except DatapointAPIError as e:
+        if e.status_code == 404 and isinstance(e.detail, dict) and e.detail.get("code") == "no_billing_customer":
+            return (
+                "No billing account yet.\n\n"
+                "Use add_credits to complete a checkout first, then manage_billing "
+                "becomes available."
+            )
+        return f"Error opening billing portal: {e.detail}"
+
+    return (
+        "To manage your subscription, open this billing portal URL:\n\n"
+        f"  {result['portal_url']}\n\n"
+        "From there you can change tier, update payment, or cancel."
     )
 
 
