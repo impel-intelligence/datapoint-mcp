@@ -15,6 +15,8 @@ from mcp_server.server import (
     _format_list_surveys,
     _format_response_row,
     _format_responses_page,
+    _format_subscription,
+    _humanize_subscription_status,
     _render_aggregation,
 )
 
@@ -676,6 +678,73 @@ class FormatListSurveysTests(unittest.TestCase):
         }
         out = _format_list_surveys(data)
         self.assertEqual(out.count("[paused]"), 1)
+
+
+class HumanizeSubscriptionStatusTests(unittest.TestCase):
+    def test_active(self):
+        self.assertEqual(_humanize_subscription_status("active", False), "Active")
+
+    def test_past_due(self):
+        self.assertEqual(_humanize_subscription_status("past_due", False), "Payment past due")
+
+    def test_incomplete(self):
+        self.assertEqual(_humanize_subscription_status("incomplete", False), "Payment pending")
+
+    def test_canceled_pending_status(self):
+        self.assertEqual(
+            _humanize_subscription_status("canceled_pending", False),
+            "Canceling at end of period",
+        )
+
+    def test_cancel_at_period_end_overrides_active(self):
+        self.assertEqual(
+            _humanize_subscription_status("active", True),
+            "Canceling at end of period",
+        )
+
+    def test_unknown_status_falls_back_to_title_case(self):
+        self.assertEqual(_humanize_subscription_status("trialing", False), "Trialing")
+
+
+class FormatSubscriptionTests(unittest.TestCase):
+    def _sub(self, **overrides) -> dict:
+        base = {
+            "tier": "pro",
+            "status": "active",
+            "current_period_start": "2026-05-15 00:00:00+00:00",
+            "current_period_end": "2026-06-15 00:00:00+00:00",
+            "cancel_at_period_end": False,
+            "monthly_credits": 5000,
+        }
+        base.update(overrides)
+        return base
+
+    def test_renders_tier_status_credits_and_renewal(self):
+        out = _format_subscription(self._sub())
+        self.assertIn("Active subscription: Pro", out)
+        self.assertIn("Status: Active", out)
+        self.assertIn("Monthly credits: 5000", out)
+        self.assertIn("Renews: 2026-06-15", out)
+        self.assertIn("Use manage_billing", out)
+
+    def test_renders_active_until_when_canceling(self):
+        out = _format_subscription(self._sub(cancel_at_period_end=True, status="canceled_pending"))
+        self.assertIn("Active until: 2026-06-15", out)
+        self.assertNotIn("Renews:", out)
+
+    def test_trims_iso_datetime_to_date(self):
+        out = _format_subscription(self._sub(current_period_end="2026-06-15T12:34:56.789+00:00"))
+        self.assertIn("Renews: 2026-06-15", out)
+        self.assertNotIn("12:34", out)
+
+    def test_missing_period_end_omits_renewal_line(self):
+        out = _format_subscription(self._sub(current_period_end=None))
+        self.assertNotIn("Renews:", out)
+        self.assertNotIn("Active until:", out)
+
+    def test_unknown_tier_falls_back_to_question_mark(self):
+        out = _format_subscription(self._sub(tier=None))
+        self.assertIn("Active subscription: ?", out)
 
 
 if __name__ == "__main__":

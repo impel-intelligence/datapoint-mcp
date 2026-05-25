@@ -67,5 +67,27 @@ class CancelJobTests(unittest.TestCase):
         self.assertEqual(result, payload)
 
 
+class GetSubscriptionTests(unittest.TestCase):
+    def test_get_subscription_uses_get_to_subscription_path(self):
+        client = _make_client()
+        with mock.patch.object(client, "_request", return_value={"tier": "pro"}) as req:
+            client.get_subscription()
+        req.assert_called_once_with("GET", "/billing/subscription")
+
+    def test_get_subscription_returns_none_for_null_body(self):
+        client = _make_client()
+        with mock.patch.object(client, "_request", return_value=None):
+            result = client.get_subscription()
+        self.assertIsNone(result)
+
+
+class CreatePortalSessionTests(unittest.TestCase):
+    def test_create_portal_session_posts_to_portal_with_empty_body(self):
+        client = _make_client()
+        with mock.patch.object(client, "_request", return_value={"portal_url": "u", "expires_at": "t"}) as req:
+            client.create_portal_session()
+        req.assert_called_once_with("POST", "/billing/portal", json={})
+
+
 if __name__ == "__main__":
     unittest.main()

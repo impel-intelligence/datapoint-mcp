@@ -38,7 +38,9 @@ LLMs are great at generating options and bad at telling you which one a real per
 | `resume_survey` | Resume task serving for a paused survey |
 | `cancel_survey` | Permanently cancel a survey and refund unused reserved credits (irreversible) |
 | `check_balance` | Check your account balance |
-| `add_credits` | Open a checkout link to top up your account |
+| `check_subscription` | Show your subscription tier, status, and renewal date |
+| `add_credits` | Open a checkout link to purchase credits or start a subscription |
+| `manage_billing` | Open a billing portal to upgrade, downgrade, cancel, or update payment |
 
 ## Install
 
