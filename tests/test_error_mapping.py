@@ -379,33 +379,16 @@ class CheckBalanceTests(unittest.TestCase):
         client.get_pricing.assert_not_called()
 
 
-class AddCreditsSubscriptionGateTests(unittest.TestCase):
-    def test_403_subscription_required_renders_message_and_tiers(self):
+class AddCreditsErrorTests(unittest.TestCase):
+    def test_403_credit_packs_disabled_renders_message(self):
         client = mock.Mock()
         client.create_checkout.side_effect = DatapointAPIError(
             403,
-            {
-                "code": "subscription_required",
-                "message": "Credit pack purchases require an active subscription.",
-                "eligible_tiers": ["basic", "pro", "enterprise"],
-            },
+            {"code": "credit_packs_disabled", "message": "Credit packs are not available."},
         )
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = add_credits(product_id="some_credit_pack")
-        self.assertIn("Credit pack purchases require an active subscription.", out)
-        self.assertIn("Available tiers: Basic, Pro, Enterprise.", out)
-        self.assertIn("Call add_credits without a product_id", out)
-
-    def test_403_without_tiers_still_renders(self):
-        client = mock.Mock()
-        client.create_checkout.side_effect = DatapointAPIError(
-            403, {"code": "subscription_required", "message": "Subscription required."}
-        )
-        with mock.patch("mcp_server.server._get_client", return_value=client):
-            out = add_credits(product_id="some_credit_pack")
-        self.assertIn("Subscription required.", out)
-        self.assertNotIn("Available tiers:", out)
-        self.assertIn("Call add_credits without a product_id", out)
+        self.assertEqual(out, "Credit packs are not available.")
 
     def test_other_error_falls_through_unchanged(self):
         client = mock.Mock()

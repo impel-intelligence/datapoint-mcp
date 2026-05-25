@@ -1066,8 +1066,8 @@ def add_credits(product_id: str | None = None) -> str:
 
     Omit ``product_id`` to see the right options for the account: subscription
     tiers for first-time users, credit-pack add-ons for existing subscribers.
-    Pass a specific ``product_id`` to check out a single product. Credit packs
-    require an active subscription.
+    Pass a specific ``product_id`` to check out a single product — including a
+    credit pack (no subscription required).
 
     Args:
         product_id: Optional product identifier. Omit for the default checkout
@@ -1078,14 +1078,8 @@ def add_credits(product_id: str | None = None) -> str:
     try:
         result = client.create_checkout(product_id=product_id)
     except DatapointAPIError as e:
-        if e.status_code == 403 and isinstance(e.detail, dict) and e.detail.get("code") == "subscription_required":
-            message = e.detail.get("message", "Credit pack purchases require an active subscription.")
-            tiers = e.detail.get("eligible_tiers") or []
-            parts = [message]
-            if tiers:
-                parts.append(f"Available tiers: {', '.join(t.capitalize() for t in tiers)}.")
-            parts.append("Call add_credits without a product_id to start a subscription, then try again.")
-            return "\n\n".join(parts)
+        if e.status_code == 403 and isinstance(e.detail, dict) and e.detail.get("code") == "credit_packs_disabled":
+            return e.detail.get("message", "Credit packs are not available right now.")
         return f"Error creating checkout: {e.detail}"
 
     return (
