@@ -860,7 +860,9 @@ def _format_response_row(r: dict) -> str:
     """Render one raw-response row as a single chat-display string."""
     annotator = (r.get("annotator_id") or "?")[:8]
     timestamp = r.get("timestamp") or "?"
-    response_text = r.get("response")
+    # `response_label` is the backend's display form (e.g. a multiple-choice
+    # opt-id resolved to its option text); fall back to the raw `response`.
+    response_text = r.get("response_label") or r.get("response")
     rt_ms = r.get("response_time_ms")
     rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
     location = _format_annotator_location(r)

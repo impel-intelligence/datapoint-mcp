@@ -269,6 +269,21 @@ class FormatResponseRowTests(unittest.TestCase):
         self.assertIn("'A'", out)
         self.assertIn("(4.8s)", out)
 
+    def test_prefers_response_label_over_raw_response(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "opt_2",
+            "response_label": "Strongly agree",
+        }
+        out = _format_response_row(row)
+        self.assertIn("Strongly agree", out)
+        self.assertNotIn("opt_2", out)
+
+    def test_falls_back_to_raw_response_when_label_absent(self):
+        out = _format_response_row({"annotator_id": "anon_x", "timestamp": "t", "response": "A"})
+        self.assertIn("'A'", out)
+
     def test_response_time_converted_to_seconds(self):
         out = _format_response_row({"response_time_ms": 12345, "response": "x"})
         self.assertIn("(12.3s)", out)
