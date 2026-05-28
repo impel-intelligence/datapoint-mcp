@@ -33,7 +33,7 @@ def _make_status(**overrides) -> dict:
         "failed_datapoints": 0,
         "total_responses": 0,
         "max_responses_per_datapoint": 10,
-        "cost_usd": 0.0,
+        "cost_credits": 0,
         "errors": [],
     }
     base.update(overrides)
@@ -49,7 +49,7 @@ class FormatCheckSurveyStandaloneTests(unittest.TestCase):
             ready_datapoints=8,
             completed_datapoints=4,
             total_responses=42,
-            cost_usd=1.23,
+            cost_credits=123,
             **overrides,
         )
 
@@ -73,7 +73,7 @@ class FormatCheckSurveyStandaloneTests(unittest.TestCase):
         self.assertIn("Survey: logo-pref", out)
         self.assertIn("Status: active", out)
         self.assertIn("Progress: 42/100 responses", out)
-        self.assertIn("Cost so far: $1.23", out)
+        self.assertIn("Cost so far: 123 credits", out)
 
     def test_renders_comparison_results(self):
         out = _format_check_survey(self._status(), self._comparison_results())
@@ -161,7 +161,7 @@ class FormatCheckSurveyChainTests(unittest.TestCase):
             ready_datapoints=1,
             completed_datapoints=1,
             total_responses=18,
-            cost_usd=0.36,
+            cost_credits=36,
         )
 
     def _chain_results(self) -> dict:
@@ -268,6 +268,21 @@ class FormatResponseRowTests(unittest.TestCase):
         self.assertIn("2026-04-21 12:37:18.452731+00:00", out)
         self.assertIn("'A'", out)
         self.assertIn("(4.8s)", out)
+
+    def test_prefers_response_label_over_raw_response(self):
+        row = {
+            "annotator_id": "anon_x",
+            "timestamp": "t",
+            "response": "opt_2",
+            "response_label": "Strongly agree",
+        }
+        out = _format_response_row(row)
+        self.assertIn("Strongly agree", out)
+        self.assertNotIn("opt_2", out)
+
+    def test_falls_back_to_raw_response_when_label_absent(self):
+        out = _format_response_row({"annotator_id": "anon_x", "timestamp": "t", "response": "A"})
+        self.assertIn("'A'", out)
 
     def test_response_time_converted_to_seconds(self):
         out = _format_response_row({"response_time_ms": 12345, "response": "x"})
@@ -589,19 +604,26 @@ class FormatLifecycleResponseTests(unittest.TestCase):
     def test_cancelled_response_includes_settled_cost(self):
         out = _format_lifecycle_response(
             "Cancelled",
-            {"job_id": "job_z", "status": "cancelled", "is_paused": True, "cost_usd": 1.23},
+            {"job_id": "job_z", "status": "cancelled", "is_paused": True, "cost_credits": 123},
         )
         self.assertEqual(
             out,
-            "Cancelled survey job_z. Status: cancelled, is_paused: true. Settled cost: $1.23.",
+            "Cancelled survey job_z. Status: cancelled, is_paused: true. Settled cost: 123 credits.",
         )
 
     def test_cancelled_response_with_zero_cost(self):
         out = _format_lifecycle_response(
             "Cancelled",
-            {"job_id": "job_z", "status": "cancelled", "is_paused": True, "cost_usd": 0.0},
+            {"job_id": "job_z", "status": "cancelled", "is_paused": True, "cost_credits": 0},
         )
-        self.assertIn("Settled cost: $0.00.", out)
+        self.assertIn("Settled cost: 0 credits.", out)
+
+    def test_cancelled_response_with_singular_cost(self):
+        out = _format_lifecycle_response(
+            "Cancelled",
+            {"job_id": "job_z", "status": "cancelled", "is_paused": True, "cost_credits": 1},
+        )
+        self.assertIn("Settled cost: 1 credit.", out)
 
     def test_pause_response_omits_cost_when_absent(self):
         out = _format_lifecycle_response("Paused", {"job_id": "job_x", "status": "active", "is_paused": True})

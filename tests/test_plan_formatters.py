@@ -24,16 +24,16 @@ class StandaloneFormatterTests(unittest.TestCase):
             "datapoints": [{}, {}, {}],
             "max_responses_per_datapoint": 10,
         }
-        out = "\n".join(_format_standalone_plan_output(plan, "A comparison survey.", 0.09, []))
+        out = "\n".join(_format_standalone_plan_output(plan, "A comparison survey.", 9, []))
         self.assertIn("Survey Plan Ready", out)
         self.assertIn("Task type: comparison", out)
         self.assertIn("Datapoints: 3", out)
         self.assertIn("Responses per datapoint: 10", out)
-        self.assertIn("Estimated cost: $0.09", out)
+        self.assertIn("Estimated cost: 9 credits", out)
         self.assertIn("WAIT for explicit confirmation", out)
 
     def test_standalone_warnings_rendered(self):
-        out = "\n".join(_format_standalone_plan_output({}, "s", 0.0, ["sample too small", "watch for bias"]))
+        out = "\n".join(_format_standalone_plan_output({}, "s", 0, ["sample too small", "watch for bias"]))
         self.assertIn("Warnings:", out)
         self.assertIn("sample too small", out)
         self.assertIn("watch for bias", out)
@@ -64,48 +64,48 @@ def _make_chain_plan(**overrides) -> dict:
 
 class ChainFormatterTests(unittest.TestCase):
     def test_chain_header_shows_length_and_datapoint_count(self):
-        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "Chain summary", 0.48, []))
+        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "Chain summary", 48, []))
         self.assertIn("Chain Survey Plan Ready", out)
         self.assertIn("Chain length: 2 step(s) in order", out)
         self.assertIn("Datapoints: 2 (each answered by up to 8 annotators)", out)
-        self.assertIn("Estimated cost: $0.48 (upper bound — responses ended early via skip_if cost less)", out)
+        self.assertIn("Estimated cost: 48 credits (upper bound — responses ended early via skip_if cost less)", out)
 
     def test_chain_structure_renders_steps_in_list_order(self):
-        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 0.1, []))
+        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 10, []))
 
         q1_pos = out.index("1. [multiple_choice]")
         q2_pos = out.index("2. [rating]")
         self.assertLess(q1_pos, q2_pos, "chain steps must render in list order")
 
     def test_skip_if_predicate_rendered_inline(self):
-        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 0.1, []))
+        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 10, []))
         self.assertIn("↳ skip_if:", out)
         self.assertIn('{"==": [{"var": "choice"}, "opt_no"]}', out)
 
     def test_no_skip_if_on_any_step_skips_section(self):
         plan = _make_chain_plan()
         plan["steps"][0].pop("skip_if", None)
-        out = "\n".join(_format_chain_plan_output(plan, "s", 0.1, []))
+        out = "\n".join(_format_chain_plan_output(plan, "s", 10, []))
         self.assertNotIn("↳ skip_if:", out)
 
     def test_cost_upper_bound_note_in_confirmation(self):
-        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 0.1, []))
+        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 10, []))
         self.assertIn("upper bound", out)
-        self.assertIn("$0.10", out)
+        self.assertIn("10 credits", out)
 
     def test_chain_warnings_passthrough(self):
         out = "\n".join(
             _format_chain_plan_output(
                 _make_chain_plan(),
                 "s",
-                0.1,
+                10,
                 ["sample size may be small for the screening step"],
             )
         )
         self.assertIn("sample size may be small for the screening step", out)
 
     def test_response_options_inline_with_question(self):
-        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 0.1, []))
+        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 10, []))
         self.assertIn("options: {'mode': 'single'}", out)
         self.assertIn("options: {'scale': [1, 2, 3, 4, 5]}", out)
 
@@ -150,13 +150,13 @@ class AudienceTargetingFormatterTests(unittest.TestCase):
         self.assertIn(";", out[0])
 
     def test_distribution_only(self):
-        out = _format_audience_targeting({"annotator_distribution": ["country", "is_eu"]})
-        self.assertEqual(out, ["Balanced by: country, is_eu"])
+        out = _format_audience_targeting({"annotator_distribution": ["country", "region"]})
+        self.assertEqual(out, ["Balanced by: country, region"])
 
     def test_filter_and_distribution_both_rendered(self):
         out = _format_audience_targeting(
             {
-                "annotator_filter": {"is_eu": [True]},
+                "annotator_filter": {"region": ["CA"]},
                 "annotator_distribution": ["country"],
             }
         )
@@ -178,7 +178,7 @@ class AudienceTargetingFormatterTests(unittest.TestCase):
 
     def test_supported_filter_columns_have_no_annotation(self):
         out = _format_audience_targeting(
-            {"annotator_filter": {"country": ["US"], "is_eu": [True]}}
+            {"annotator_filter": {"country": ["US"], "region": ["CA"]}}
         )
         self.assertNotIn("(limited support)", out[0])
 
@@ -197,8 +197,15 @@ class AudienceTargetingFormatterTests(unittest.TestCase):
         self.assertEqual(out, ["Balanced by: country, asn (limited support)"])
 
     def test_supported_distribution_columns_have_no_annotation(self):
-        out = _format_audience_targeting({"annotator_distribution": ["country", "is_eu"]})
-        self.assertEqual(out, ["Balanced by: country, is_eu"])
+        out = _format_audience_targeting({"annotator_distribution": ["country", "region"]})
+        self.assertEqual(out, ["Balanced by: country, region"])
+
+    def test_dropped_geo_keys_marked_limited_support(self):
+        """is_eu / postal / timezone were removed from the client-supported set,
+        so a hand-edited plan using them must surface the limited-support hint."""
+        for key, val in (("postal", ["94107"]), ("timezone", ["PST"]), ("is_eu", [True])):
+            out = _format_audience_targeting({"annotator_filter": {key: val}})
+            self.assertIn("(limited support)", out[0], key)
 
 
 class StandalonePlanWithTargetingTests(unittest.TestCase):
@@ -210,27 +217,27 @@ class StandalonePlanWithTargetingTests(unittest.TestCase):
             "annotator_filter": {"country": ["US"]},
             "annotator_distribution": ["country"],
         }
-        out = "\n".join(_format_standalone_plan_output(plan, "s", 0.03, []))
+        out = "\n".join(_format_standalone_plan_output(plan, "s", 3, []))
         self.assertIn("Targeting: country in [US]", out)
         self.assertIn("Balanced by: country", out)
 
     def test_standalone_omits_targeting_when_absent(self):
         plan = {"task_type": "rating", "datapoints": [{}], "max_responses_per_datapoint": 10}
-        out = "\n".join(_format_standalone_plan_output(plan, "s", 0.03, []))
+        out = "\n".join(_format_standalone_plan_output(plan, "s", 3, []))
         self.assertNotIn("Targeting:", out)
         self.assertNotIn("Balanced by:", out)
 
 
 class ChainPlanWithTargetingTests(unittest.TestCase):
     def test_chain_renders_targeting_above_chain_structure(self):
-        plan = _make_chain_plan(annotator_filter={"is_eu": [True]})
-        out = "\n".join(_format_chain_plan_output(plan, "s", 0.03, []))
+        plan = _make_chain_plan(annotator_filter={"region": ["CA"]})
+        out = "\n".join(_format_chain_plan_output(plan, "s", 3, []))
         targeting_pos = out.index("Targeting:")
         structure_pos = out.index("Chain structure:")
         self.assertLess(targeting_pos, structure_pos)
 
     def test_chain_omits_targeting_when_absent(self):
-        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 0.03, []))
+        out = "\n".join(_format_chain_plan_output(_make_chain_plan(), "s", 3, []))
         self.assertNotIn("Targeting:", out)
         self.assertNotIn("Balanced by:", out)
 

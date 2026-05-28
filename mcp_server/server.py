@@ -108,14 +108,35 @@ def setup() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _describe_upload_error(e: DatapointAPIError) -> str:
-    """Render a user-friendly message for a media upload error."""
-    if e.status_code == 413 and isinstance(e.detail, dict) and e.detail.get("code") == "media_too_large":
-        max_bytes = e.detail.get("max_bytes")
+def _describe_media_error(e: DatapointAPIError) -> str:
+    """Render a user-friendly message for a media rejection (upload or create).
+
+    The server returns a structured ``{"code": ...}`` body for media rejections;
+    map the known codes to short messages and fall back to the raw detail.
+    """
+    detail = e.detail
+    if not isinstance(detail, dict):
+        return str(detail)
+
+    code = detail.get("code")
+    if code == "media_too_large":
+        max_bytes = detail.get("max_bytes")
         if max_bytes:
             return f"file exceeds the upload cap ({max_bytes / 1_048_576:.0f} MB max)"
         return "file exceeds the upload cap"
-    return str(e.detail)
+    if code == "unsupported_media_extension":
+        ext = detail.get("extension")
+        return f"unsupported file type ({ext})" if ext else "unsupported file type"
+    if code == "media_type_mismatch":
+        return "file contents do not match its extension"
+    if code == "invalid_svg":
+        reason = detail.get("reason")
+        return f"invalid SVG: {reason}" if reason else "invalid SVG"
+    if code == "content_blocked":
+        reason = detail.get("reason") or "content violates platform policy"
+        return f"content review rejected this file: {reason}"
+    # Unknown structured error — prefer a human field over dumping the raw dict.
+    return str(detail.get("message") or detail.get("reason") or detail)
 
 
 @mcp.tool()
@@ -160,7 +181,7 @@ def upload_media(file_paths: list[str]) -> str:
         except FileNotFoundError as e:
             errors.append(f"{path}: {e}")
         except DatapointAPIError as e:
-            errors.append(f"{path}: {_describe_upload_error(e)}")
+            errors.append(f"{path}: {_describe_media_error(e)}")
 
     total = len(file_paths)
     files_failed = len(errors)
@@ -207,9 +228,6 @@ BROADLY_SUPPORTED_FILTER_KEYS = {
     "country_name",
     "region",
     "city",
-    "postal",
-    "timezone",
-    "is_eu",
 }
 
 
@@ -250,7 +268,7 @@ def _pluralize(n: int, word: str) -> str:
     return f"{n} {word}{'s' if n != 1 else ''}"
 
 
-def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
+def _format_standalone_plan_output(plan: dict, summary: str, cost: int, warnings: list) -> list[str]:
     """Render a standalone (non-chain) plan for user confirmation."""
     lines = [
         "Survey Plan Ready",
@@ -259,7 +277,7 @@ def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnin
         f"Task type: {plan.get('task_type', '?')}",
         f"Datapoints: {len(plan.get('datapoints', []))}",
         f"Responses per datapoint: {plan.get('max_responses_per_datapoint', '?')}",
-        f"Estimated cost: ${cost:.2f}",
+        f"Estimated cost: {_pluralize(cost, 'credit')}",
     ]
     lines.extend(_format_audience_targeting(plan))
     if warnings:
@@ -269,14 +287,14 @@ def _format_standalone_plan_output(plan: dict, summary: str, cost: float, warnin
             lines.append(f"  - {w}")
     lines.append("")
     lines.append(
-        f"⚠ Creating this survey will spend ${cost:.2f} and kick off real paid "
+        f"⚠ Creating this survey will spend {_pluralize(cost, 'credit')} and kick off real paid "
         "human work within seconds. Show the summary and cost above to the user "
         "and WAIT for explicit confirmation before calling `create_survey`."
     )
     return lines
 
 
-def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: list) -> list[str]:
+def _format_chain_plan_output(plan: dict, summary: str, cost: int, warnings: list) -> list[str]:
     """Render a chain plan so the user sees the full flow + skip conditions
     before confirming. The agent should show this to the user verbatim.
 
@@ -296,7 +314,7 @@ def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: l
         f"Summary: {summary}",
         f"Chain length: {len(steps)} step(s) in order",
         f"Datapoints: {len(datapoints)} (each answered by up to {max_resp} annotators)",
-        f"Estimated cost: ${cost:.2f} (upper bound — responses ended early via skip_if cost less)",
+        f"Estimated cost: {_pluralize(cost, 'credit')} (upper bound — responses ended early via skip_if cost less)",
     ]
     lines.extend(_format_audience_targeting(plan))
     lines.append("")
@@ -321,7 +339,7 @@ def _format_chain_plan_output(plan: dict, summary: str, cost: float, warnings: l
 
     lines.append("")
     lines.append(
-        f"⚠ Creating this chain survey will reserve up to ${cost:.2f} (the upper bound — "
+        f"⚠ Creating this chain survey will reserve up to {_pluralize(cost, 'credit')} (the upper bound — "
         "responses ended early by a step's `skip_if` rule cost proportionally less)."
     )
     lines.append(
@@ -385,7 +403,7 @@ def plan_survey(description: str, max_responses: int = 10) -> str:
 
         plan = result.get("plan", {})
         summary = result.get("summary", "")
-        cost = result.get("estimated_cost_usd", 0)
+        cost = result.get("estimated_cost_credits", 0)
         warnings = result.get("warnings", [])
 
         if plan.get("steps"):
@@ -464,9 +482,9 @@ def create_survey(plan: dict) -> str:
     except DatapointAPIError as e:
         if e.status_code == 402:
             if isinstance(e.detail, dict):
-                needed = e.detail.get("needed_usd", 0)
-                available = e.detail.get("available_usd", 0)
-                details = f"Need ${needed:.2f}, have ${available:.2f}"
+                needed = e.detail.get("needed_credits", 0)
+                available = e.detail.get("available_credits", 0)
+                details = f"Need {_pluralize(needed, 'credit')}, have {_pluralize(available, 'credit')}"
             else:
                 details = str(e.detail)
             return (
@@ -484,6 +502,11 @@ def create_survey(plan: dict) -> str:
             return msg
         if e.status_code == 503:
             return f"Service temporarily unavailable: {e.detail}"
+        if isinstance(e.detail, dict):
+            # Structured rejection (e.g. unsupported_media_extension,
+            # media_type_mismatch): render it like an upload error instead of
+            # dumping the raw dict, which would leak the rejected media URL.
+            return f"Couldn't create the survey: {_describe_media_error(e)}"
         return f"Error creating survey: {e.detail}"
 
     lines = [
@@ -492,12 +515,12 @@ def create_survey(plan: dict) -> str:
         f"  Job ID: {result['job_id']}",
         f"  Status: {result['status']}",
         f"  Datapoints: {result['total_datapoints']}",
-        f"  Estimated cost: ${result.get('estimated_cost_usd', 0):.2f}",
+        f"  Estimated cost: {_pluralize(result.get('estimated_cost_credits', 0), 'credit')}",
     ]
 
     try:
         balance = client.get_balance()
-        lines.append(f"  Remaining balance: ${balance['available_usd']:.2f}")
+        lines.append(f"  Remaining balance: {_pluralize(balance['available_credits'], 'credit')}")
     except DatapointAPIError:
         pass
 
@@ -581,7 +604,7 @@ def _format_check_survey(status: dict, results_data: dict | None, results_error:
         f"active: {ready - completed}, "
         f"completed: {completed}, "
         f"failed: {status.get('failed_datapoints', 0)}",
-        f"Cost so far: ${status.get('cost_usd', 0):.2f}",
+        f"Cost so far: {_pluralize(status.get('cost_credits', 0), 'credit')}",
     ]
 
     lines.extend(_format_audience_targeting(status))
@@ -713,16 +736,16 @@ def list_surveys() -> str:
 def _format_lifecycle_response(verb: str, response: dict) -> str:
     """Render the response from a pause/resume/cancel call.
 
-    ``cost_usd`` is rendered when the backend includes it (cancel returns the
+    ``cost_credits`` is rendered when the backend includes it (cancel returns the
     settled cost; pause/resume don't).
     """
     job_id = response.get("job_id", "?")
     status = response.get("status", "?")
     is_paused = response.get("is_paused", False)
     line = f"{verb} survey {job_id}. Status: {status}, is_paused: {str(is_paused).lower()}."
-    cost = response.get("cost_usd")
+    cost = response.get("cost_credits")
     if cost is not None:
-        line += f" Settled cost: ${cost:.2f}."
+        line += f" Settled cost: {_pluralize(cost, 'credit')}."
     return line
 
 
@@ -863,7 +886,9 @@ def _format_response_row(r: dict) -> str:
     """Render one raw-response row as a single chat-display string."""
     annotator = (r.get("annotator_id") or "?")[:8]
     timestamp = r.get("timestamp") or "?"
-    response_text = r.get("response")
+    # `response_label` is the backend's display form (e.g. a multiple-choice
+    # opt-id resolved to its option text); fall back to the raw `response`.
+    response_text = r.get("response_label") or r.get("response")
     rt_ms = r.get("response_time_ms")
     rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
     location = _format_annotator_location(r)
@@ -1035,9 +1060,9 @@ def check_balance() -> str:
 
     lines = [
         "Account balance:",
-        f"  Available: ${balance['available_usd']:.2f}",
-        f"  Reserved (in-flight surveys): ${balance['reserved_usd']:.2f}",
-        f"  Total purchased: ${balance['total_purchased_usd']:.2f}",
+        f"  Available: {_pluralize(balance['available_credits'], 'credit')}",
+        f"  Reserved (in-flight surveys): {_pluralize(balance['reserved_credits'], 'credit')}",
+        f"  Total purchased: {_pluralize(balance['total_purchased_credits'], 'credit')}",
     ]
 
     # Pricing is best-effort; older deployments without /billing/pricing simply omit the rate.
@@ -1046,8 +1071,8 @@ def check_balance() -> str:
     except DatapointAPIError:
         pricing = None
 
-    if pricing is not None and pricing.get("per_response_usd") is not None:
-        lines.append(f"  Per-response rate: ${pricing['per_response_usd']:.4f}")
+    if pricing is not None and pricing.get("credits_per_response") is not None:
+        lines.append(f"  Per-response rate: {_pluralize(pricing['credits_per_response'], 'credit')}")
 
     return "\n".join(lines)
 

@@ -6,10 +6,11 @@ hitting the network.
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from unittest import mock
 
-from mcp_server.client import DatapointClient
+from mcp_server.client import DatapointAPIError, DatapointClient
 
 
 def _make_client() -> DatapointClient:
@@ -61,10 +62,27 @@ class CancelJobTests(unittest.TestCase):
 
     def test_cancel_job_returns_request_payload(self):
         client = _make_client()
-        payload = {"job_id": "job_x", "status": "cancelled", "is_paused": True, "cost_usd": 1.23}
+        payload = {"job_id": "job_x", "status": "cancelled", "is_paused": True, "cost_credits": 123}
         with mock.patch.object(client, "_request", return_value=payload):
             result = client.cancel_job("job_x")
         self.assertEqual(result, payload)
+
+
+class UploadMediaErrorParsingTests(unittest.TestCase):
+    def test_structured_error_body_becomes_dict_detail(self):
+        """upload_media must parse a JSON error body into a dict detail so the
+        renderer's structured-error branches fire (it used to pass raw text)."""
+        client = _make_client()
+        resp = mock.Mock(status_code=413)
+        resp.json.return_value = {"detail": {"code": "media_too_large", "max_bytes": 20971520}}
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as tf:
+            tf.write(b"data")
+            tf.flush()
+            with mock.patch.object(client._http, "post", return_value=resp):
+                with self.assertRaises(DatapointAPIError) as ctx:
+                    client.upload_media(tf.name)
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertEqual(ctx.exception.detail, {"code": "media_too_large", "max_bytes": 20971520})
 
 
 if __name__ == "__main__":
