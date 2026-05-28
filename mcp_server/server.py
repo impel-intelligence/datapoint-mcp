@@ -108,8 +108,8 @@ def setup() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _describe_upload_error(e: DatapointAPIError) -> str:
-    """Render a user-friendly message for a media upload error.
+def _describe_media_error(e: DatapointAPIError) -> str:
+    """Render a user-friendly message for a media rejection (upload or create).
 
     The server returns a structured ``{"code": ...}`` body for media rejections;
     map the known codes to short messages and fall back to the raw detail.
@@ -181,7 +181,7 @@ def upload_media(file_paths: list[str]) -> str:
         except FileNotFoundError as e:
             errors.append(f"{path}: {e}")
         except DatapointAPIError as e:
-            errors.append(f"{path}: {_describe_upload_error(e)}")
+            errors.append(f"{path}: {_describe_media_error(e)}")
 
     total = len(file_paths)
     files_failed = len(errors)
@@ -502,6 +502,11 @@ def create_survey(plan: dict) -> str:
             return msg
         if e.status_code == 503:
             return f"Service temporarily unavailable: {e.detail}"
+        if isinstance(e.detail, dict):
+            # Structured rejection (e.g. unsupported_media_extension,
+            # media_type_mismatch): render it like an upload error instead of
+            # dumping the raw dict, which would leak the rejected media URL.
+            return f"Couldn't create the survey: {_describe_media_error(e)}"
         return f"Error creating survey: {e.detail}"
 
     lines = [

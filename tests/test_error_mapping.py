@@ -12,7 +12,7 @@ from unittest import mock
 
 from mcp_server.client import DatapointAPIError
 from mcp_server.server import (
-    _describe_upload_error,
+    _describe_media_error,
     cancel_survey,
     check_balance,
     check_survey,
@@ -26,41 +26,41 @@ class DescribeUploadErrorTests(unittest.TestCase):
     def test_413_media_too_large_renders_human_cap(self):
         err = DatapointAPIError(413, {"code": "media_too_large", "max_bytes": 20 * 1024 * 1024})
         self.assertEqual(
-            _describe_upload_error(err),
+            _describe_media_error(err),
             "file exceeds the upload cap (20 MB max)",
         )
 
     def test_413_without_max_bytes_falls_back(self):
         err = DatapointAPIError(413, {"code": "media_too_large"})
-        self.assertEqual(_describe_upload_error(err), "file exceeds the upload cap")
+        self.assertEqual(_describe_media_error(err), "file exceeds the upload cap")
 
     def test_other_error_falls_through_to_detail_string(self):
         err = DatapointAPIError(500, "internal error")
-        self.assertEqual(_describe_upload_error(err), "internal error")
+        self.assertEqual(_describe_media_error(err), "internal error")
 
     def test_413_without_dict_detail_falls_through(self):
         err = DatapointAPIError(413, "Payload Too Large")
-        self.assertEqual(_describe_upload_error(err), "Payload Too Large")
+        self.assertEqual(_describe_media_error(err), "Payload Too Large")
 
     def test_unsupported_extension_names_the_type(self):
         err = DatapointAPIError(
             400, {"code": "unsupported_media_extension", "filename": "a.heic", "extension": ".heic"}
         )
-        self.assertEqual(_describe_upload_error(err), "unsupported file type (.heic)")
+        self.assertEqual(_describe_media_error(err), "unsupported file type (.heic)")
 
     def test_media_type_mismatch_is_explained(self):
         err = DatapointAPIError(
             400, {"code": "media_type_mismatch", "extension": ".png", "declared": "image/gif"}
         )
-        self.assertIn("do not match", _describe_upload_error(err))
+        self.assertIn("do not match", _describe_media_error(err))
 
     def test_invalid_svg_includes_reason(self):
         err = DatapointAPIError(400, {"code": "invalid_svg", "filename": "logo.svg", "reason": "embedded script"})
-        self.assertEqual(_describe_upload_error(err), "invalid SVG: embedded script")
+        self.assertEqual(_describe_media_error(err), "invalid SVG: embedded script")
 
     def test_content_blocked_includes_reason(self):
         err = DatapointAPIError(422, {"code": "content_blocked", "reason": "Depicts violence."})
-        self.assertIn("content review rejected this file: Depicts violence.", _describe_upload_error(err))
+        self.assertIn("content review rejected this file: Depicts violence.", _describe_media_error(err))
 
 
 class UploadMediaErrorTests(unittest.TestCase):
@@ -337,6 +337,23 @@ class CreateSurveyErrorTests(unittest.TestCase):
         self.assertIn("Insufficient balance", out)
         self.assertIn("Need 500 credits", out)
         self.assertIn("have 150 credits", out)
+
+    def test_400_media_rejection_is_friendly_and_hides_url(self):
+        err = DatapointAPIError(
+            400,
+            {
+                "code": "unsupported_media_extension",
+                "location": "datapoints[0].media",
+                "url": "https://example.com/secret-asset.heic",
+                "extension": ".heic",
+            },
+        )
+        client = self._client_raising(err)
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = create_survey({"datapoints": [], "task_type": "comparison"})
+        self.assertIn("unsupported file type (.heic)", out)
+        self.assertNotIn("secret-asset", out)
+        self.assertNotIn("https://", out)
 
 
 class CheckBalanceTests(unittest.TestCase):
