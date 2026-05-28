@@ -207,9 +207,6 @@ BROADLY_SUPPORTED_FILTER_KEYS = {
     "country_name",
     "region",
     "city",
-    "postal",
-    "timezone",
-    "is_eu",
 }
 
 

@@ -231,12 +231,12 @@ class CheckSurveyAudienceTargetingTests(unittest.TestCase):
     def test_renders_distribution_when_present(self):
         client = mock.Mock()
         client.get_job_status.return_value = self._status(
-            annotator_distribution=["country", "is_eu"],
+            annotator_distribution=["country", "region"],
         )
         client.get_job_results.return_value = {"results": [], "task_type": "comparison"}
         with mock.patch("mcp_server.server._get_client", return_value=client):
             out = check_survey("job_x")
-        self.assertIn("Balanced by: country, is_eu", out)
+        self.assertIn("Balanced by: country, region", out)
 
     def test_renders_response_options_when_present(self):
         client = mock.Mock()
