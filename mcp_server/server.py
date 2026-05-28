@@ -109,13 +109,34 @@ def setup() -> str:
 
 
 def _describe_upload_error(e: DatapointAPIError) -> str:
-    """Render a user-friendly message for a media upload error."""
-    if e.status_code == 413 and isinstance(e.detail, dict) and e.detail.get("code") == "media_too_large":
-        max_bytes = e.detail.get("max_bytes")
+    """Render a user-friendly message for a media upload error.
+
+    The server returns a structured ``{"code": ...}`` body for media rejections;
+    map the known codes to short messages and fall back to the raw detail.
+    """
+    detail = e.detail
+    if not isinstance(detail, dict):
+        return str(detail)
+
+    code = detail.get("code")
+    if code == "media_too_large":
+        max_bytes = detail.get("max_bytes")
         if max_bytes:
             return f"file exceeds the upload cap ({max_bytes / 1_048_576:.0f} MB max)"
         return "file exceeds the upload cap"
-    return str(e.detail)
+    if code == "unsupported_media_extension":
+        ext = detail.get("extension")
+        return f"unsupported file type ({ext})" if ext else "unsupported file type"
+    if code == "media_type_mismatch":
+        return "file contents do not match its extension"
+    if code == "invalid_svg":
+        reason = detail.get("reason")
+        return f"invalid SVG: {reason}" if reason else "invalid SVG"
+    if code == "content_blocked":
+        reason = detail.get("reason") or "content violates platform policy"
+        return f"content review rejected this file: {reason}"
+    # Unknown structured error — prefer a human field over dumping the raw dict.
+    return str(detail.get("message") or detail.get("reason") or detail)
 
 
 @mcp.tool()

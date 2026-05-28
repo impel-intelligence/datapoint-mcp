@@ -42,6 +42,26 @@ class DescribeUploadErrorTests(unittest.TestCase):
         err = DatapointAPIError(413, "Payload Too Large")
         self.assertEqual(_describe_upload_error(err), "Payload Too Large")
 
+    def test_unsupported_extension_names_the_type(self):
+        err = DatapointAPIError(
+            400, {"code": "unsupported_media_extension", "filename": "a.heic", "extension": ".heic"}
+        )
+        self.assertEqual(_describe_upload_error(err), "unsupported file type (.heic)")
+
+    def test_media_type_mismatch_is_explained(self):
+        err = DatapointAPIError(
+            400, {"code": "media_type_mismatch", "extension": ".png", "declared": "image/gif"}
+        )
+        self.assertIn("do not match", _describe_upload_error(err))
+
+    def test_invalid_svg_includes_reason(self):
+        err = DatapointAPIError(400, {"code": "invalid_svg", "filename": "logo.svg", "reason": "embedded script"})
+        self.assertEqual(_describe_upload_error(err), "invalid SVG: embedded script")
+
+    def test_content_blocked_includes_reason(self):
+        err = DatapointAPIError(422, {"code": "content_blocked", "reason": "Depicts violence."})
+        self.assertIn("content review rejected this file: Depicts violence.", _describe_upload_error(err))
+
 
 class UploadMediaErrorTests(unittest.TestCase):
     def test_413_renders_friendly_message_in_failed_block(self):
