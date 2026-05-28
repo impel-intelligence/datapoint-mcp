@@ -108,14 +108,35 @@ def setup() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _describe_upload_error(e: DatapointAPIError) -> str:
-    """Render a user-friendly message for a media upload error."""
-    if e.status_code == 413 and isinstance(e.detail, dict) and e.detail.get("code") == "media_too_large":
-        max_bytes = e.detail.get("max_bytes")
+def _describe_media_error(e: DatapointAPIError) -> str:
+    """Render a user-friendly message for a media rejection (upload or create).
+
+    The server returns a structured ``{"code": ...}`` body for media rejections;
+    map the known codes to short messages and fall back to the raw detail.
+    """
+    detail = e.detail
+    if not isinstance(detail, dict):
+        return str(detail)
+
+    code = detail.get("code")
+    if code == "media_too_large":
+        max_bytes = detail.get("max_bytes")
         if max_bytes:
             return f"file exceeds the upload cap ({max_bytes / 1_048_576:.0f} MB max)"
         return "file exceeds the upload cap"
-    return str(e.detail)
+    if code == "unsupported_media_extension":
+        ext = detail.get("extension")
+        return f"unsupported file type ({ext})" if ext else "unsupported file type"
+    if code == "media_type_mismatch":
+        return "file contents do not match its extension"
+    if code == "invalid_svg":
+        reason = detail.get("reason")
+        return f"invalid SVG: {reason}" if reason else "invalid SVG"
+    if code == "content_blocked":
+        reason = detail.get("reason") or "content violates platform policy"
+        return f"content review rejected this file: {reason}"
+    # Unknown structured error — prefer a human field over dumping the raw dict.
+    return str(detail.get("message") or detail.get("reason") or detail)
 
 
 @mcp.tool()
@@ -160,7 +181,7 @@ def upload_media(file_paths: list[str]) -> str:
         except FileNotFoundError as e:
             errors.append(f"{path}: {e}")
         except DatapointAPIError as e:
-            errors.append(f"{path}: {_describe_upload_error(e)}")
+            errors.append(f"{path}: {_describe_media_error(e)}")
 
     total = len(file_paths)
     files_failed = len(errors)
@@ -207,9 +228,6 @@ BROADLY_SUPPORTED_FILTER_KEYS = {
     "country_name",
     "region",
     "city",
-    "postal",
-    "timezone",
-    "is_eu",
 }
 
 
@@ -484,6 +502,11 @@ def create_survey(plan: dict) -> str:
             return msg
         if e.status_code == 503:
             return f"Service temporarily unavailable: {e.detail}"
+        if isinstance(e.detail, dict):
+            # Structured rejection (e.g. unsupported_media_extension,
+            # media_type_mismatch): render it like an upload error instead of
+            # dumping the raw dict, which would leak the rejected media URL.
+            return f"Couldn't create the survey: {_describe_media_error(e)}"
         return f"Error creating survey: {e.detail}"
 
     lines = [
@@ -863,7 +886,9 @@ def _format_response_row(r: dict) -> str:
     """Render one raw-response row as a single chat-display string."""
     annotator = (r.get("annotator_id") or "?")[:8]
     timestamp = r.get("timestamp") or "?"
-    response_text = r.get("response")
+    # `response_label` is the backend's display form (e.g. a multiple-choice
+    # opt-id resolved to its option text); fall back to the raw `response`.
+    response_text = r.get("response_label") or r.get("response")
     rt_ms = r.get("response_time_ms")
     rt_str = f" ({rt_ms / 1000:.1f}s)" if rt_ms is not None else ""
     location = _format_annotator_location(r)

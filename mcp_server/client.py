@@ -156,7 +156,12 @@ class DatapointClient:
             )
 
         if resp.status_code >= 400:
-            raise DatapointAPIError(resp.status_code, resp.text)
+            try:
+                body = resp.json()
+                detail = body.get("detail", body.get("message", resp.text))
+            except Exception:
+                detail = resp.text
+            raise DatapointAPIError(resp.status_code, detail)
 
         return resp.json()
 

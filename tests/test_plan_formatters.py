@@ -150,13 +150,13 @@ class AudienceTargetingFormatterTests(unittest.TestCase):
         self.assertIn(";", out[0])
 
     def test_distribution_only(self):
-        out = _format_audience_targeting({"annotator_distribution": ["country", "is_eu"]})
-        self.assertEqual(out, ["Balanced by: country, is_eu"])
+        out = _format_audience_targeting({"annotator_distribution": ["country", "region"]})
+        self.assertEqual(out, ["Balanced by: country, region"])
 
     def test_filter_and_distribution_both_rendered(self):
         out = _format_audience_targeting(
             {
-                "annotator_filter": {"is_eu": [True]},
+                "annotator_filter": {"region": ["CA"]},
                 "annotator_distribution": ["country"],
             }
         )
@@ -178,7 +178,7 @@ class AudienceTargetingFormatterTests(unittest.TestCase):
 
     def test_supported_filter_columns_have_no_annotation(self):
         out = _format_audience_targeting(
-            {"annotator_filter": {"country": ["US"], "is_eu": [True]}}
+            {"annotator_filter": {"country": ["US"], "region": ["CA"]}}
         )
         self.assertNotIn("(limited support)", out[0])
 
@@ -197,8 +197,15 @@ class AudienceTargetingFormatterTests(unittest.TestCase):
         self.assertEqual(out, ["Balanced by: country, asn (limited support)"])
 
     def test_supported_distribution_columns_have_no_annotation(self):
-        out = _format_audience_targeting({"annotator_distribution": ["country", "is_eu"]})
-        self.assertEqual(out, ["Balanced by: country, is_eu"])
+        out = _format_audience_targeting({"annotator_distribution": ["country", "region"]})
+        self.assertEqual(out, ["Balanced by: country, region"])
+
+    def test_dropped_geo_keys_marked_limited_support(self):
+        """is_eu / postal / timezone were removed from the client-supported set,
+        so a hand-edited plan using them must surface the limited-support hint."""
+        for key, val in (("postal", ["94107"]), ("timezone", ["PST"]), ("is_eu", [True])):
+            out = _format_audience_targeting({"annotator_filter": {key: val}})
+            self.assertIn("(limited support)", out[0], key)
 
 
 class StandalonePlanWithTargetingTests(unittest.TestCase):
@@ -223,7 +230,7 @@ class StandalonePlanWithTargetingTests(unittest.TestCase):
 
 class ChainPlanWithTargetingTests(unittest.TestCase):
     def test_chain_renders_targeting_above_chain_structure(self):
-        plan = _make_chain_plan(annotator_filter={"is_eu": [True]})
+        plan = _make_chain_plan(annotator_filter={"region": ["CA"]})
         out = "\n".join(_format_chain_plan_output(plan, "s", 3, []))
         targeting_pos = out.index("Targeting:")
         structure_pos = out.index("Chain structure:")
