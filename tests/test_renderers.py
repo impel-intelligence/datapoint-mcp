@@ -426,9 +426,9 @@ class FormatResponsesPageIncludeFlagTests(unittest.TestCase):
 
 
 class FormatResponsesPageStandaloneTests(unittest.TestCase):
-    def test_groups_by_datapoint(self):
+    def test_groups_by_annotator(self):
         data = {
-            "total_responses": 2,
+            "total_responses": 3,
             "responses": [
                 {
                     "datapoint_index": 0,
@@ -439,18 +439,48 @@ class FormatResponsesPageStandaloneTests(unittest.TestCase):
                 },
                 {
                     "datapoint_index": 1,
-                    "annotator_id": "anon_2",
+                    "annotator_id": "anon_1",
                     "timestamp": "t2",
                     "response": "B",
                     "response_time_ms": 2000,
                 },
+                {
+                    "datapoint_index": 0,
+                    "annotator_id": "anon_2",
+                    "timestamp": "t3",
+                    "response": "B",
+                    "response_time_ms": 1500,
+                },
             ],
         }
         out = _format_responses_page(data, job_id="job_x", page=1, per_page=100)
+        self.assertIn("Annotator anon_1 (2 responses):", out)
+        self.assertIn("Annotator anon_2 (1 response):", out)
+        # Annotator blocks preserve the server's order; rows show datapoints.
+        self.assertLess(out.index("anon_1"), out.index("anon_2"))
         self.assertIn("Datapoint 0", out)
         self.assertIn("Datapoint 1", out)
         self.assertIn("'A'", out)
         self.assertIn("'B'", out)
+
+    def test_uses_server_total_pages_for_more_hint(self):
+        row = {
+            "datapoint_index": 0,
+            "annotator_id": "anon_1",
+            "timestamp": "t1",
+            "response": "A",
+        }
+        # Pages overshoot per_page under annotator grouping: 8 of 12 rows shown
+        # on page 1 of 2. The naive estimate would claim 3 pages.
+        data = {"total_responses": 12, "total_pages": 2, "responses": [row] * 8}
+        out = _format_responses_page(data, job_id="job_x", page=1, per_page=5)
+        self.assertIn("(page 1 of 2)", out)
+        self.assertIn("page=2", out)
+        out_last = _format_responses_page(
+            {**data, "responses": [row] * 4}, job_id="job_x", page=2, per_page=5
+        )
+        self.assertIn("(page 2 of 2)", out_last)
+        self.assertNotIn("More responses available", out_last)
 
 
 class FormatResponsesPageChainTests(unittest.TestCase):
@@ -497,18 +527,23 @@ class FormatResponsesPageChainTests(unittest.TestCase):
             ],
         }
 
-    def test_groups_by_datapoint_then_step(self):
+    def test_groups_by_annotator_with_step_rows(self):
         out = _format_responses_page(self._chain_data(), job_id="job_c", page=1, per_page=100)
-        self.assertIn("Datapoint 0 (3 responses across 2 steps):", out)
-        self.assertIn("Datapoint 1 (1 response across 1 step):", out)
-        self.assertIn("Step 0 [multiple_choice]", out)
-        self.assertIn("Step 1 [rating]", out)
-        self.assertIn("    - anon_alp", out)
+        self.assertIn("Annotator anon_alp (2 answers across 1 datapoint):", out)
+        self.assertIn("Annotator anon_bet (1 answer across 1 datapoint):", out)
+        self.assertIn("Annotator anon_gam (1 answer across 1 datapoint):", out)
+        self.assertIn("Datapoint 0, step 0 [multiple_choice]", out)
+        self.assertIn("Datapoint 0, step 1 [rating]", out)
+        self.assertIn("Datapoint 1, step 0 [multiple_choice]", out)
 
     def test_chain_step_drop_off_visible(self):
+        # anon_alpha answered both steps; anon_beta stopped after step 0 —
+        # visible as a missing step-1 row inside their block.
         out = _format_responses_page(self._chain_data(), job_id="job_c", page=1, per_page=100)
-        self.assertIn("Step 0 [multiple_choice] — 2 responses", out)
-        self.assertIn("Step 1 [rating] — 1 response", out)
+        alpha_block = out[out.index("anon_alp") : out.index("anon_bet")]
+        beta_block = out[out.index("anon_bet") : out.index("anon_gam")]
+        self.assertIn("step 1 [rating]", alpha_block)
+        self.assertNotIn("step 1", beta_block)
 
 
 class FormatResponsesPageQuestionTests(unittest.TestCase):
