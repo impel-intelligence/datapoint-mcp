@@ -882,7 +882,7 @@ def _format_chain_outcome(r: dict) -> str:
     return f"chain: {' / '.join(parts)}" if parts else ""
 
 
-def _format_response_row(r: dict) -> str:
+def _format_response_row(r: dict, include_annotator: bool = True) -> str:
     """Render one raw-response row as a single chat-display string."""
     annotator = (r.get("annotator_id") or "?")[:8]
     timestamp = r.get("timestamp") or "?"
@@ -895,7 +895,8 @@ def _format_response_row(r: dict) -> str:
     loc_str = f" — {location}" if location else ""
     chain_outcome = _format_chain_outcome(r)
     outcome_str = f" [{chain_outcome}]" if chain_outcome else ""
-    return f"{annotator} @ {timestamp}: {response_text!r}{rt_str}{loc_str}{outcome_str}"
+    prefix = f"{annotator} @ {timestamp}" if include_annotator else f"@ {timestamp}"
+    return f"{prefix}: {response_text!r}{rt_str}{loc_str}{outcome_str}"
 
 
 def _format_responses_page(
@@ -916,9 +917,16 @@ def _format_responses_page(
     steps_meta = data.get("steps")
     is_chain = bool(steps_meta) or any(r.get("step_index") is not None for r in responses)
 
+    # Pages hold whole annotator groups, so they can exceed per_page and the
+    # page count is not derivable from total/per_page. Older servers don't
+    # send total_pages; estimate from the row count for them.
+    total_pages = data.get("total_pages")
+    if total_pages is None:
+        total_pages = -(-total // per_page) if per_page > 0 else 1
+
     lines = [
         f"Raw responses — job {job_id}",
-        f"Showing {len(responses)} of {total} total (page {page}, {per_page} per page)",
+        f"Showing {len(responses)} of {total} total (page {page} of {total_pages})",
     ]
     if include_abandoned:
         lines.append("Including answers from abandoned chains.")
@@ -953,40 +961,34 @@ def _format_responses_page(
         if instruction or opts:
             lines.append("")
 
-    if is_chain:
-        by_dp_step: dict[int, dict[int, list[dict]]] = {}
-        for r in responses:
-            dp = r.get("datapoint_index", -1)
-            si = r.get("step_index", -1)
-            by_dp_step.setdefault(dp, {}).setdefault(si, []).append(r)
+    # Rows arrive annotator-major (each page holds whole annotator answer
+    # sets, in earliest-activity order) — render one block per annotator.
+    by_annotator: dict[str, list[dict]] = {}
+    for r in responses:
+        by_annotator.setdefault(r.get("annotator_id") or "?", []).append(r)
 
-        for dp_idx in sorted(by_dp_step):
-            steps = by_dp_step[dp_idx]
-            total_rows = sum(len(rs) for rs in steps.values())
+    for annotator, items in by_annotator.items():
+        if is_chain:
+            datapoints = {r.get("datapoint_index", -1) for r in items}
             lines.append(
-                f"Datapoint {dp_idx} ({_pluralize(total_rows, 'response')} "
-                f"across {_pluralize(len(steps), 'step')}):"
+                f"Annotator {annotator[:8]} ({_pluralize(len(items), 'answer')} "
+                f"across {_pluralize(len(datapoints), 'datapoint')}):"
             )
-            for step_idx in sorted(steps):
-                items = steps[step_idx]
-                tt = items[0].get("task_type", "?")
-                lines.append(f"  Step {step_idx} [{tt}] — {_pluralize(len(items), 'response')}:")
-                for r in items:
-                    lines.append(f"    - {_format_response_row(r)}")
-            lines.append("")
-    else:
-        by_datapoint: dict[int, list[dict]] = {}
-        for r in responses:
-            by_datapoint.setdefault(r.get("datapoint_index", -1), []).append(r)
-
-        for idx in sorted(by_datapoint):
-            items = by_datapoint[idx]
-            lines.append(f"Datapoint {idx} ({_pluralize(len(items), 'response')}):")
             for r in items:
-                lines.append(f"  - {_format_response_row(r)}")
-            lines.append("")
+                dp = r.get("datapoint_index", "?")
+                si = r.get("step_index", "?")
+                tt = r.get("task_type", "?")
+                lines.append(
+                    f"  - Datapoint {dp}, step {si} [{tt}]: "
+                    f"{_format_response_row(r, include_annotator=False)}"
+                )
+        else:
+            lines.append(f"Annotator {annotator[:8]} ({_pluralize(len(items), 'response')}):")
+            for r in items:
+                dp = r.get("datapoint_index", "?")
+                lines.append(f"  - Datapoint {dp}: {_format_response_row(r, include_annotator=False)}")
+        lines.append("")
 
-    total_pages = -(-total // per_page) if per_page > 0 else 1
     if page < total_pages:
         lines.append(f"More responses available — call again with page={page + 1}.")
 
@@ -1012,10 +1014,14 @@ def get_survey_responses(
     abandoned mid-flow or that are still in progress, matching what counts
     toward your survey's response total. Set the include flags to surface them.
 
+    Responses are grouped by annotator: each page contains whole annotator
+    answer sets, so a page can hold more than per_page rows. The rendered
+    output says when more pages are available.
+
     Args:
         job_id: The job ID returned by create_survey.
         page: Page number (default 1).
-        per_page: Responses per page (default 100, max 200).
+        per_page: Minimum responses per page (default 100, max 200).
         include_abandoned: Include answered rows from abandoned chains.
         include_in_progress: Include answered rows from in-flight chains.
     """
