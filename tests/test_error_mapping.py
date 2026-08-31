@@ -54,6 +54,30 @@ class DescribeUploadErrorTests(unittest.TestCase):
         )
         self.assertIn("do not match", _describe_media_error(err))
 
+    def test_unsupported_video_format_surfaces_server_message(self):
+        err = DatapointAPIError(
+            400,
+            {
+                "code": "unsupported_video_format",
+                "message": "Unsupported video codec: hevc. Supported: h264.",
+            },
+        )
+        self.assertEqual(
+            _describe_media_error(err),
+            "Unsupported video codec: hevc. Supported: h264.",
+        )
+
+    def test_invalid_video_surfaces_reason(self):
+        err = DatapointAPIError(
+            400,
+            {"code": "invalid_video", "reason": "The file is not a readable video."},
+        )
+        self.assertEqual(_describe_media_error(err), "The file is not a readable video.")
+
+    def test_video_validation_outage_prompts_retry(self):
+        err = DatapointAPIError(503, {"code": "video_validation_unavailable"})
+        self.assertIn("temporarily unavailable", _describe_media_error(err))
+
     def test_invalid_svg_includes_reason(self):
         err = DatapointAPIError(400, {"code": "invalid_svg", "filename": "logo.svg", "reason": "embedded script"})
         self.assertEqual(_describe_media_error(err), "invalid SVG: embedded script")
@@ -74,6 +98,20 @@ class UploadMediaErrorTests(unittest.TestCase):
         self.assertIn("file exceeds the upload cap (20 MB max)", out)
         self.assertNotIn("media_too_large", out)
         self.assertNotIn("max_bytes", out)
+
+    def test_video_rejection_renders_server_message_in_failed_block(self):
+        client = mock.Mock()
+        client.upload_media.side_effect = DatapointAPIError(
+            400,
+            {
+                "code": "unsupported_video_format",
+                "message": "Unsupported video codec: hevc. Supported: h264.",
+            },
+        )
+        with mock.patch("mcp_server.server._get_client", return_value=client):
+            out = upload_media(["/tmp/hevc.mov"])
+        self.assertIn("Unsupported video codec: hevc. Supported: h264.", out)
+        self.assertNotIn("unsupported_video_format", out)
 
 
 class UploadMediaSummaryTests(unittest.TestCase):

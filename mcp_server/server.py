@@ -129,6 +129,15 @@ def _describe_media_error(e: DatapointAPIError) -> str:
         return f"unsupported file type ({ext})" if ext else "unsupported file type"
     if code == "media_type_mismatch":
         return "file contents do not match its extension"
+    if code == "unsupported_video_format":
+        return str(
+            detail.get("message")
+            or "unsupported video format (use H.264 MP4/MOV or VP8/VP9 WebM)"
+        )
+    if code == "invalid_video":
+        return str(detail.get("message") or detail.get("reason") or "invalid or unreadable video")
+    if code == "video_validation_unavailable":
+        return str(detail.get("message") or "video format validation is temporarily unavailable; please retry")
     if code == "invalid_svg":
         reason = detail.get("reason")
         return f"invalid SVG: {reason}" if reason else "invalid SVG"

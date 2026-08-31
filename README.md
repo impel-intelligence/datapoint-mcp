@@ -40,6 +40,11 @@ LLMs are great at generating options and bad at telling you which one a real per
 | `check_balance` | Check your account balance |
 | `add_credits` | Open a checkout link to top up your account |
 
+Video uploads accept browser-compatible H.264 MP4/MOV or VP8/VP9 WebM files.
+The API validates the actual media bytes before storage; `upload_media` reports
+unsupported, unreadable, or temporarily unprobeable videos in its failed-files
+section.
+
 ## Install
 
 Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on your `PATH`.
